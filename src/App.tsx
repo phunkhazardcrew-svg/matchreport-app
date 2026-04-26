@@ -3,8 +3,11 @@ import {
   Play, Pause, Square, Settings, FileText, ChevronLeft,
   Upload, Plus, Minus, Trash2, Download, Users, AlertTriangle,
   RotateCcw, Clock, CircleDot, RectangleHorizontal, ArrowLeftRight,
-  X, Check, Shirt, ClipboardCopy, Eye
+  X, Check, Shirt, ClipboardCopy, Eye, Edit, Save, FileSpreadsheet
 } from "lucide-react";
+import { generatePDF } from './utils/exportPdf';
+import { generateXLS } from './utils/exportXls';
+import { sharePDF, shareXLS } from './utils/shareFile';
 
 function fmt(sec) {
   const m = Math.floor(Math.abs(sec) / 60);
@@ -103,7 +106,7 @@ export default function MatchReport() {
   const [hOn,setHOn]=useState([]);
   const [aOn,setAOn]=useState([]);
   const [notes,setNotes]=useState("");
-  const [prev,setPrev]=useState("");
+  const [exporting,setExporting]=useState("");
   const [modal,setModal]=useState(null);
   const [mT,setMT]=useState(null);
   const [mS,setMS]=useState(0);
@@ -131,7 +134,7 @@ export default function MatchReport() {
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
   function startT(){if(tl===null)setTl(hd*60);setRun(true);setPau(false);setStarted(true);}
   function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);setModal(null);}
-  function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);setScreen("report");}
+  function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);setScreen("review");}
 
   function openAct(t,tm){setMT(tm);setMS(0);setMD({});setModal(t);}
   function selGT(t){setMD({gt:t});setMS(1);}
@@ -141,19 +144,11 @@ export default function MatchReport() {
   function selSO(p){setMD({out:p});setMS(1);}
   function selSI(p){const fn=mT==="home"?setHOn:setAOn;fn(x=>x.filter(id=>id!==mD.out.id).concat(p.id));setEvts(x=>[...x,{type:"sub",half,outPlayer:mD.out,inPlayer:p,team:mT,id:`s-${Date.now()}`,displayTime:getDispMin()}]);setModal(null);}
   function delEv(ev){setEvts(x=>x.filter(e=>e.id!==ev.id));if(ev.type==="goal"){const own=ev.goalType==="Eigentor";if(own){if(ev.team==="home")setAS(s=>Math.max(0,s-1));else setHS(s=>Math.max(0,s-1));}else{if(ev.team==="home")setHS(s=>Math.max(0,s-1));else setAS(s=>Math.max(0,s-1));}}}
-  function resetAll(){setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setPrev("");setModal(null);setScreen("game");}
+  function resetAll(){setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);setScreen("game");}
 
   const onF=(tm)=>(tm==="home"?hp:ap).filter(p=>(tm==="home"?hOn:aOn).includes(p.id));
   const bnch=(tm)=>(tm==="home"?hp:ap).filter(p=>!(tm==="home"?hOn:aOn).includes(p.id));
   const allP=(tm)=>tm==="home"?hp:ap;
-
-  function buildHTML(){
-    const all=evts.filter(e=>e.type!=="info");const h1=all.filter(e=>e.half===1),h2=all.filter(e=>e.half===2);
-    const o1=evts.find(e=>e.half===1&&e.type==="info"),o2=evts.find(e=>e.half===2&&e.type==="info");
-    const row=ev=>{if(ev.type==="goal")return`<tr><td><b>${ev.displayTime}</b></td><td>⚽ ${ev.goalType!=="Tor"?"("+ev.goalType+") ":""}${ev.player.number} ${ev.player.name}</td><td>${ev.team==="home"?ht:at}</td></tr>`;if(ev.type==="card")return`<tr><td><b>${ev.displayTime}</b></td><td>${ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱"} ${ev.cardType} — ${ev.player.number} ${ev.player.name}</td><td>${ev.team==="home"?ht:at}</td></tr>`;if(ev.type==="sub")return`<tr><td><b>${ev.displayTime}</b></td><td>🔄 ${ev.outPlayer.number} ${ev.outPlayer.name} → ${ev.inPlayer.number} ${ev.inPlayer.name}</td><td>${ev.team==="home"?ht:at}</td></tr>`;return"";};
-    const pl=(p)=>{let x="";evts.filter(e=>e.type==="goal"&&e.player?.id===p.id).forEach(g=>x+=` ⚽ ${g.displayTime}`);evts.filter(e=>e.type==="card"&&e.player?.id===p.id).forEach(c=>x+=` ${c.cardType==="Gelb"?"🟨":c.cardType==="Rot"?"🟥":"⏱"} ${c.displayTime}`);evts.filter(e=>e.type==="sub"&&e.outPlayer?.id===p.id).forEach(s=>x+=` 🔄↓ ${s.displayTime}`);evts.filter(e=>e.type==="sub"&&e.inPlayer?.id===p.id).forEach(s=>x+=` 🔄↑ ${s.displayTime}`);return`${p.number} ${p.name}${p.isGoalkeeper?" (TW)":""}${p.isCaptain?" (C)":""}${x}`;};
-    return`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Spielbericht</title><style>*{box-sizing:border-box}body{font-family:Arial,sans-serif;max-width:700px;margin:20px auto;color:#222;font-size:13px}h1{text-align:center;font-size:22px;margin-bottom:4px}h2{font-size:15px;border-bottom:2px solid #333;padding-bottom:4px;margin-top:24px}h3{font-size:13px;color:#555;margin:12px 0 6px}.sc{text-align:center;font-size:40px;font-weight:900;margin:8px 0}.hz{text-align:center;color:#666;font-size:14px}.tm{display:flex;gap:24px}.t{flex:1}.t ul{list-style:none;padding:0;margin:0}.t li{padding:2px 0;font-size:12px}.t li.s{color:#888}table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}th,td{text-align:left;padding:5px 8px;border-bottom:1px solid #ddd}th{background:#f5f5f5;font-weight:700}.n{margin-top:16px;padding:10px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;font-size:12px;white-space:pre-wrap}</style></head><body><h1>⚽ Spielbericht</h1><div class="sc">${ht} ${hS} : ${aS} ${at}</div>${htH!==null?`<div class="hz">Halbzeit: ${htH} : ${htA}</div>`:""}<h2>Aufstellung</h2><div class="tm"><div class="t"><strong>${ht}</strong><ul>${hp.filter(p=>p.isStarter).map(p=>`<li>${pl(p)}</li>`).join("")}${hp.filter(p=>!p.isStarter).length?`<li style="color:#999;margin-top:6px;font-weight:700;font-size:11px">Ersatzbank</li>`+hp.filter(p=>!p.isStarter).map(p=>`<li class="s">${pl(p)}</li>`).join(""):""}</ul></div><div class="t"><strong>${at}</strong><ul>${ap.filter(p=>p.isStarter).map(p=>`<li>${pl(p)}</li>`).join("")}${ap.filter(p=>!p.isStarter).length?`<li style="color:#999;margin-top:6px;font-weight:700;font-size:11px">Ersatzbank</li>`+ap.filter(p=>!p.isStarter).map(p=>`<li class="s">${pl(p)}</li>`).join(""):""}</ul></div></div><h2>Spielverlauf</h2><h3>1. Halbzeit${o1?" — "+o1.text:""}</h3>${h1.length?`<table><tr><th style="width:50px">Min.</th><th>Aktion</th><th style="width:140px">Mannschaft</th></tr>${h1.map(row).join("")}</table>`:"<p style='color:#888'>Keine Aktionen</p>"}<h3>2. Halbzeit${o2?" — "+o2.text:""}</h3>${h2.length?`<table><tr><th style="width:50px">Min.</th><th>Aktion</th><th style="width:140px">Mannschaft</th></tr>${h2.map(row).join("")}</table>`:"<p style='color:#888'>Keine Aktionen</p>"}${notes?`<h2>Bemerkungen</h2><div class="n">${notes.replace(/</g,"&lt;")}</div>`:""}<div style="margin-top:30px;text-align:center;color:#bbb;font-size:10px">Erstellt mit Matchreport App</div></body></html>`;
-  }
 
   /* ═══ SETTINGS ═══ */
   if(screen==="settings"){return(
@@ -243,7 +238,7 @@ export default function MatchReport() {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <button onClick={()=>setScreen("settings")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><Settings size={15}/> Einstellungen</button>
           <div style={{fontSize:12,fontWeight:700,color:half===1?C.grn:C.blu,background:half===1?`${C.grn}20`:`${C.blu}20`,padding:"4px 12px",borderRadius:20}}>{half}. Halbzeit</div>
-          <button onClick={()=>setScreen("report")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><FileText size={15}/> Bericht</button>
+          <button onClick={()=>setScreen("review")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><FileText size={15}/> Bericht</button>
         </div>
         <div style={{fontSize:isOt?28:48,fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:isOt?C.red:C.tx,padding:"8px 0"}}>{isOt?`${fmt(0)} +${fmt(otS)}`:fmt(tl??hd*60)}</div>
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:4}}>
@@ -284,7 +279,65 @@ export default function MatchReport() {
     </div>
   );}
 
-  /* ═══ REPORT ═══ */
+  /* ═══ REVIEW — Korrekturen vor Export ═══ */
+  if(screen==="review"){
+    const hz1r=evts.filter(e=>e.half===1&&e.type!=="info"),hz2r=evts.filter(e=>e.half===2&&e.type!=="info");
+    const o1r=evts.find(e=>e.half===1&&e.type==="info"),o2r=evts.find(e=>e.half===2&&e.type==="info");
+
+    return(
+    <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
+      <div style={{padding:"16px 16px 100px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <button onClick={()=>setScreen("game")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13}}><ChevronLeft size={18}/> Zurück</button>
+        </div>
+
+        <div style={{textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:22,fontWeight:800,color:C.org,marginBottom:4}}><Edit size={20} style={{verticalAlign:"middle",marginRight:8}}/>Korrektur</div>
+          <div style={{fontSize:13,color:C.txd}}>Überprüfe und korrigiere alle Einträge vor dem Export</div>
+        </div>
+
+        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20}}>
+            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:C.txd,marginBottom:4}}>{ht}</div><div style={{fontSize:40,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{hS}</div></div>
+            <div style={{fontSize:24,color:C.txd}}>:</div>
+            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:C.txd,marginBottom:4}}>{at}</div><div style={{fontSize:40,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{aS}</div></div>
+          </div>
+          {htH!==null&&<div style={{fontSize:13,color:C.txd,marginTop:6,fontFamily:"'JetBrains Mono',monospace"}}>Halbzeit: {htH} : {htA}</div>}
+          <div style={{fontSize:11,color:C.org,marginTop:8}}>Tore löschen passt den Spielstand automatisch an</div>
+        </div>
+
+        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.tx,marginBottom:12}}>Spielereignisse ({hz1r.length+hz2r.length})</div>
+          {hz1r.length>0&&<div style={{marginBottom:16}}>
+            <div style={{fontSize:12,fontWeight:700,color:C.grn,marginBottom:8,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>1. Halbzeit{o1r&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o1r.text}</span>}</div>
+            {hz1r.map(ev=>(<div key={ev.id} style={{fontSize:13,padding:"8px 0",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.bdr}40`}}>
+              <span style={{color:C.grn,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,minWidth:44}}>{ev.displayTime}</span>
+              <span style={{flex:1}}>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&<span style={{color:C.yel}}>({ev.goalType}) </span>}{ev.player.number} {ev.player.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.player.number} {ev.player.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number} → {ev.inPlayer.number} {ev.inPlayer.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span>
+              <button onClick={()=>delEv(ev)} style={{background:C.red,border:"none",color:"#fff",cursor:"pointer",padding:"6px 10px",borderRadius:8,fontSize:11,fontWeight:600,flexShrink:0}}>Löschen</button>
+            </div>))}
+          </div>}
+          {hz2r.length>0&&<div>
+            <div style={{fontSize:12,fontWeight:700,color:C.blu,marginBottom:8,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>2. Halbzeit{o2r&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o2r.text}</span>}</div>
+            {hz2r.map(ev=>(<div key={ev.id} style={{fontSize:13,padding:"8px 0",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.bdr}40`}}>
+              <span style={{color:C.blu,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,minWidth:44}}>{ev.displayTime}</span>
+              <span style={{flex:1}}>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&<span style={{color:C.yel}}>({ev.goalType}) </span>}{ev.player.number} {ev.player.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.player.number} {ev.player.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number} → {ev.inPlayer.number} {ev.inPlayer.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span>
+              <button onClick={()=>delEv(ev)} style={{background:C.red,border:"none",color:"#fff",cursor:"pointer",padding:"6px 10px",borderRadius:8,fontSize:11,fontWeight:600,flexShrink:0}}>Löschen</button>
+            </div>))}
+          </div>}
+          {hz1r.length===0&&hz2r.length===0&&<div style={{textAlign:"center",color:C.txd,fontSize:13,padding:20}}>Keine Spielereignisse</div>}
+        </div>
+
+        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.tx,marginBottom:8}}>Bemerkungen</div>
+          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Besondere Vorkommnisse, Anmerkungen..." style={{...inp,minHeight:100,resize:"vertical",fontSize:14}}/>
+        </div>
+
+        <Btn full color={C.grn} onClick={()=>setScreen("report")}><Save size={18}/> Alles korrekt — Spielbericht erstellen</Btn>
+      </div>
+    </div>);
+  }
+
+  /* ═══ REPORT mit PDF/XLS Export ═══ */
   if(screen==="report"){
     const hg=evts.filter(e=>e.type==="goal"&&((e.team==="home"&&e.goalType!=="Eigentor")||(e.team==="away"&&e.goalType==="Eigentor")));
     const ag=evts.filter(e=>e.type==="goal"&&((e.team==="away"&&e.goalType!=="Eigentor")||(e.team==="home"&&e.goalType==="Eigentor")));
@@ -292,18 +345,16 @@ export default function MatchReport() {
     const ac=evts.filter(e=>e.type==="card"&&e.team==="away");
     const hz1=evts.filter(e=>e.half===1&&e.type!=="info"),hz2=evts.filter(e=>e.half===2&&e.type!=="info");
     const o1=evts.find(e=>e.half===1&&e.type==="info"),o2=evts.find(e=>e.half===2&&e.type==="info");
+    const exportData={homeTeam:ht,awayTeam:at,homeScore:hS,awayScore:aS,htHomeScore:htH,htAwayScore:htA,homePlayers:hp,awayPlayers:ap,events:evts,notes,halfDuration:hd};
 
-    const evRow=(ev)=>(<div key={ev.id} style={{fontSize:13,padding:"6px 0",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.bdr}30`}}>
-      <span style={{color:ev.half===1?C.grn:C.blu,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,minWidth:44}}>{ev.displayTime}</span>
-      <span style={{flex:1}}>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&<span style={{color:C.yel}}>({ev.goalType}) </span>}{ev.player.number} {ev.player.name} <span style={{color:C.txd}}>— {ev.team==="home"?ht:at}</span></span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.cardType} — {ev.player.number} {ev.player.name} <span style={{color:C.txd}}>— {ev.team==="home"?ht:at}</span></span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number} {ev.outPlayer.name} → {ev.inPlayer.number} {ev.inPlayer.name} <span style={{color:C.txd}}>— {ev.team==="home"?ht:at}</span></span>}</span>
-      <button onClick={()=>delEv(ev)} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:4,opacity:0.6,flexShrink:0}}><Trash2 size={14}/></button>
-    </div>);
+    async function doPdf(){setExporting("pdf");try{const d=generatePDF(exportData);const f=`Spielbericht_${ht}_vs_${at}.pdf`;const ok=await sharePDF(d,f);flash(ok?"pdf_ok":"pdf_err");}catch(e){console.error(e);flash("pdf_err");}setExporting("");}
+    async function doXls(){setExporting("xls");try{const d=generateXLS(exportData);const f=`Spielbericht_${ht}_vs_${at}.xlsx`;const ok=await shareXLS(d,f);flash(ok?"xls_ok":"xls_err");}catch(e){console.error(e);flash("xls_err");}setExporting("");}
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
       <div style={{padding:"16px 16px 100px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <button onClick={()=>setScreen("game")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13}}><ChevronLeft size={18}/> Zurück</button>
+          <button onClick={()=>setScreen("review")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13}}><ChevronLeft size={18}/> Korrektur</button>
           <span style={{fontSize:13,fontWeight:700,color:C.grn}}>Spielbericht</span>
         </div>
 
@@ -320,44 +371,44 @@ export default function MatchReport() {
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
           {[{t:"home",l:ht,pl:hp,gs:hg,cs:hc},{t:"away",l:at,pl:ap,gs:ag,cs:ac}].map(({t,l,pl,gs,cs})=>(<div key={t} style={{background:C.card,borderRadius:14,padding:14,border:`1px solid ${C.bdr}`}}>
             <div style={{fontSize:12,fontWeight:700,color:C.grn,marginBottom:8,textTransform:"uppercase"}}>{l}</div>
-            {pl.filter(p=>p.isStarter).map(p=>{const pg=gs.filter(x=>x.player?.id===p.id),pk=cs.filter(x=>x.player?.id===p.id),pso=evts.filter(x=>x.type==="sub"&&x.outPlayer?.id===p.id),psi=evts.filter(x=>x.type==="sub"&&x.inPlayer?.id===p.id);return(<div key={p.id} style={{fontSize:12,padding:"2px 0",display:"flex",alignItems:"center",gap:4,flexWrap:"wrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:C.grn,fontWeight:700,minWidth:20}}>{p.number}</span><span>{p.name}</span>{p.isGoalkeeper&&<span style={{color:C.yel,fontSize:10}}>TW</span>}{p.isCaptain&&<span style={{color:C.blu,fontSize:10}}>C</span>}{pg.map((x,i)=><span key={`g${i}`} style={{fontSize:11}}>⚽<span style={{color:C.txd,fontSize:10}}>{x.displayTime}</span></span>)}{pk.map((x,i)=><span key={`c${i}`} style={{fontSize:11}}>{x.cardType==="Gelb"?"🟨":x.cardType==="Rot"?"🟥":"⏱️"}<span style={{color:C.txd,fontSize:10}}>{x.displayTime}</span></span>)}{pso.map((x,i)=><span key={`so${i}`} style={{fontSize:11,color:C.red}}>🔄↓<span style={{color:C.txd,fontSize:10}}>{x.displayTime}</span></span>)}{psi.map((x,i)=><span key={`si${i}`} style={{fontSize:11,color:C.grn}}>🔄↑<span style={{color:C.txd,fontSize:10}}>{x.displayTime}</span></span>)}</div>);})}
-            {pl.filter(p=>!p.isStarter).length>0&&<div><div style={{fontSize:10,color:C.txd,marginTop:6,marginBottom:2,fontWeight:600}}>Ersatz</div>{pl.filter(p=>!p.isStarter).map(p=>{const pg=gs.filter(x=>x.player?.id===p.id),pk=cs.filter(x=>x.player?.id===p.id),pso=evts.filter(x=>x.type==="sub"&&x.outPlayer?.id===p.id),psi=evts.filter(x=>x.type==="sub"&&x.inPlayer?.id===p.id);return(<div key={p.id} style={{fontSize:12,padding:"2px 0",display:"flex",alignItems:"center",gap:4,color:C.txd,flexWrap:"wrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,minWidth:20}}>{p.number}</span><span>{p.name}</span>{pg.map((x,i)=><span key={`g${i}`} style={{fontSize:11}}>⚽<span style={{fontSize:10}}>{x.displayTime}</span></span>)}{pk.map((x,i)=><span key={`c${i}`} style={{fontSize:11}}>{x.cardType==="Gelb"?"🟨":x.cardType==="Rot"?"🟥":"⏱️"}<span style={{fontSize:10}}>{x.displayTime}</span></span>)}{psi.map((x,i)=><span key={`si${i}`} style={{fontSize:11,color:C.grn}}>🔄↑<span style={{fontSize:10}}>{x.displayTime}</span></span>)}{pso.map((x,i)=><span key={`so${i}`} style={{fontSize:11,color:C.red}}>🔄↓<span style={{fontSize:10}}>{x.displayTime}</span></span>)}</div>);})}</div>}
+            {pl.filter(p=>p.isStarter).map(p=>{const pg=gs.filter(x=>x.player?.id===p.id),pk=cs.filter(x=>x.player?.id===p.id),pso=evts.filter(x=>x.type==="sub"&&x.outPlayer?.id===p.id),psi=evts.filter(x=>x.type==="sub"&&x.inPlayer?.id===p.id);return(<div key={p.id} style={{fontSize:11,padding:"2px 0",display:"flex",alignItems:"center",gap:3,flexWrap:"wrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",color:C.grn,fontWeight:700,minWidth:18}}>{p.number}</span><span>{p.name}</span>{p.isGoalkeeper&&<span style={{color:C.yel,fontSize:9}}>TW</span>}{p.isCaptain&&<span style={{color:C.blu,fontSize:9}}>C</span>}{pg.map((x,i)=><span key={`g${i}`} style={{fontSize:10}}>⚽{x.displayTime}</span>)}{pk.map((x,i)=><span key={`c${i}`} style={{fontSize:10}}>{x.cardType==="Gelb"?"🟨":"🟥"}{x.displayTime}</span>)}{pso.map((x,i)=><span key={`o${i}`} style={{fontSize:10,color:C.red}}>↓{x.displayTime}</span>)}{psi.map((x,i)=><span key={`i${i}`} style={{fontSize:10,color:C.grn}}>↑{x.displayTime}</span>)}</div>);})}
+            {pl.filter(p=>!p.isStarter).length>0&&<div><div style={{fontSize:9,color:C.txd,marginTop:4,fontWeight:600}}>Ersatz</div>{pl.filter(p=>!p.isStarter).map(p=>{const pg=gs.filter(x=>x.player?.id===p.id),psi=evts.filter(x=>x.type==="sub"&&x.inPlayer?.id===p.id);return(<div key={p.id} style={{fontSize:11,padding:"1px 0",color:C.txd,display:"flex",gap:3,flexWrap:"wrap"}}><span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,minWidth:18}}>{p.number}</span><span>{p.name}</span>{pg.map((x,i)=><span key={`g${i}`} style={{fontSize:10}}>⚽{x.displayTime}</span>)}{psi.map((x,i)=><span key={`i${i}`} style={{fontSize:10,color:C.grn}}>↑{x.displayTime}</span>)}</div>);})}</div>}
           </div>))}
         </div>
 
         <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
-          <div style={{fontSize:14,fontWeight:700,color:C.txd,marginBottom:12,textTransform:"uppercase"}}>Spielverlauf <span style={{fontSize:10,fontWeight:400}}>(🗑 = löschen)</span></div>
-          <div style={{marginBottom:16}}>
-            <div style={{fontSize:12,fontWeight:700,color:C.grn,marginBottom:8,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>1. Halbzeit{o1&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o1.text}</span>}</div>
-            {hz1.length===0?<div style={{fontSize:13,color:C.txd}}>Keine Aktionen</div>:hz1.map(evRow)}
-          </div>
-          <div>
-            <div style={{fontSize:12,fontWeight:700,color:C.blu,marginBottom:8,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>2. Halbzeit{o2&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o2.text}</span>}</div>
-            {hz2.length===0?<div style={{fontSize:13,color:C.txd}}>Keine Aktionen</div>:hz2.map(evRow)}
-          </div>
+          <div style={{fontSize:14,fontWeight:700,color:C.txd,marginBottom:10,textTransform:"uppercase"}}>Spielverlauf</div>
+          {hz1.length>0&&<div style={{marginBottom:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:C.grn,marginBottom:6}}>1. Halbzeit{o1&&<span style={{fontWeight:400,color:C.txd,marginLeft:6}}>{o1.text}</span>}</div>
+            {hz1.map(ev=>(<div key={ev.id} style={{fontSize:12,padding:"4px 0",display:"flex",gap:6}}><span style={{color:C.grn,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,minWidth:40}}>{ev.displayTime}</span><span>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"?`(${ev.goalType}) `:""}{ev.player.number} {ev.player.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":"🟥"} {ev.player.number} {ev.player.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number} → {ev.inPlayer.number} {ev.inPlayer.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span></div>))}
+          </div>}
+          {hz2.length>0&&<div>
+            <div style={{fontSize:11,fontWeight:700,color:C.blu,marginBottom:6}}>2. Halbzeit{o2&&<span style={{fontWeight:400,color:C.txd,marginLeft:6}}>{o2.text}</span>}</div>
+            {hz2.map(ev=>(<div key={ev.id} style={{fontSize:12,padding:"4px 0",display:"flex",gap:6}}><span style={{color:C.blu,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,minWidth:40}}>{ev.displayTime}</span><span>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"?`(${ev.goalType}) `:""}{ev.player.number} {ev.player.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":"🟥"} {ev.player.number} {ev.player.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number} → {ev.inPlayer.number} {ev.inPlayer.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span></div>))}
+          </div>}
+          {hz1.length===0&&hz2.length===0&&<div style={{fontSize:13,color:C.txd,textAlign:"center",padding:12}}>Keine Aktionen</div>}
         </div>
 
-        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
-          <div style={{fontSize:14,fontWeight:700,color:C.txd,marginBottom:8,textTransform:"uppercase"}}>Bemerkungen</div>
-          <textarea value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Besondere Vorkommnisse..." style={{...inp,minHeight:80,resize:"vertical",fontSize:13}}/>
-        </div>
-
-        <div style={{display:"flex",gap:10,marginBottom:10}}>
-          <Btn full color={C.blu} onClick={()=>setPrev(buildHTML())}><Eye size={15}/> Vorschau</Btn>
-          <Btn full color={C.grn} onClick={()=>{const h=buildHTML();navigator.clipboard?.writeText(h).then(()=>{flash("copied");}).catch(()=>setPrev(h));}}><ClipboardCopy size={15}/> HTML kopieren</Btn>
-        </div>
-        <Btn full color={C.red} onClick={()=>setModal("reset")}><RotateCcw size={15}/> Reset</Btn>
-
-        {msg==="copied"&&<div style={{marginTop:10,padding:"8px 12px",background:`${C.grn}20`,borderRadius:8,fontSize:13,color:C.grn,textAlign:"center"}}>✅ HTML kopiert! → Texteditor → .html speichern → Browser → Drucken als PDF</div>}
-
-        {prev&&<div style={{marginTop:16}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}><span style={{fontSize:13,fontWeight:700,color:C.grn}}>📄 Druckvorschau</span><button onClick={()=>setPrev("")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer"}}><X size={18}/></button></div>
-          <div style={{background:"#fff",borderRadius:10,padding:16,border:`1px solid ${C.bdr}`,maxHeight:500,overflowY:"auto"}} dangerouslySetInnerHTML={{__html:prev.replace(/<!DOCTYPE.*?<body>/s,"").replace(/<\/body>.*$/s,"")}}/>
+        {notes&&<div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
+          <div style={{fontSize:14,fontWeight:700,color:C.txd,marginBottom:6,textTransform:"uppercase"}}>Bemerkungen</div>
+          <div style={{fontSize:13,whiteSpace:"pre-wrap"}}>{notes}</div>
         </div>}
+
+        <div style={{fontSize:15,fontWeight:700,color:C.tx,marginBottom:12,textAlign:"center"}}>Spielbericht exportieren</div>
+        <div style={{display:"flex",gap:10,marginBottom:12}}>
+          <Btn full color={C.red} disabled={exporting==="pdf"} onClick={doPdf}><Download size={16}/> {exporting==="pdf"?"Erstelle...":"PDF Export"}</Btn>
+          <Btn full color={C.grn} disabled={exporting==="xls"} onClick={doXls}><FileSpreadsheet size={16}/> {exporting==="xls"?"Erstelle...":"Excel Export"}</Btn>
+        </div>
+
+        {msg==="pdf_ok"&&<div style={{marginTop:8,padding:"10px",background:`${C.grn}20`,borderRadius:10,fontSize:13,color:C.grn,textAlign:"center"}}>✅ PDF erstellt!</div>}
+        {msg==="xls_ok"&&<div style={{marginTop:8,padding:"10px",background:`${C.grn}20`,borderRadius:10,fontSize:13,color:C.grn,textAlign:"center"}}>✅ Excel erstellt!</div>}
+        {(msg==="pdf_err"||msg==="xls_err")&&<div style={{marginTop:8,padding:"10px",background:`${C.red}20`,borderRadius:10,fontSize:13,color:C.red,textAlign:"center"}}>❌ Export fehlgeschlagen</div>}
+
+        <div style={{marginTop:16}}><Btn full color="#334155" onClick={()=>setModal("reset")}><RotateCcw size={15}/> Neues Spiel</Btn></div>
       </div>
 
-      {modal==="reset"&&<Modal title="Spiel zurücksetzen?" onClose={()=>setModal(null)}>
-        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:12,background:`${C.red}15`,borderRadius:10}}><AlertTriangle size={20} color={C.red}/><p style={{color:C.tx,fontSize:14,margin:0}}>Timer und Aktionen werden zurückgesetzt. Aufstellung bleibt.</p></div>
+      {modal==="reset"&&<Modal title="Neues Spiel?" onClose={()=>setModal(null)}>
+        <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:16,padding:12,background:`${C.red}15`,borderRadius:10}}><AlertTriangle size={20} color={C.red}/><p style={{color:C.tx,fontSize:14,margin:0}}>Alle Daten werden zurückgesetzt. Aufstellung bleibt.</p></div>
         <div style={{display:"flex",gap:10}}><Btn full color={C.txd} onClick={()=>setModal(null)}>Abbrechen</Btn><Btn full color={C.red} onClick={resetAll}><RotateCcw size={16}/> Zurücksetzen</Btn></div>
       </Modal>}
     </div>);
