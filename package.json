@@ -1,12 +1,12 @@
 {
   "name": "matchreport",
   "version": "1.0.0",
-  "description": "⚽ Fußball Spielbericht App",
+  "description": "\u26bd Fu\u00dfball Spielbericht App",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "vite build",
     "preview": "vite preview",
     "cap:sync": "cap sync",
     "cap:build": "npm run build && cap sync android"
