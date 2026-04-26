@@ -196,6 +196,8 @@ export default function MatchReport(){
   /* ═══ SOUNDS ═══ */
   if(screen==="sounds"){
     const labels:Record<string,string>={goal:"⚽ Tor",eigentor:"⚽ Eigentor",elfmeter:"⚽ Elfmeter",yellow:"🟨 Gelbe Karte",red:"🟥 Rote Karte",sub:"🔄 Wechsel",halftime:"⏱ Halbzeit",fulltime:"🏁 Spielende"};
+    const [ringList,setRingList]=useState<{title:string;uri:string}[]>([]);
+    const [pickingFor,setPickingFor]=useState<string|null>(null);
 
     async function pickSound(id:string){
       try{
@@ -204,17 +206,31 @@ export default function MatchReport(){
         if(!result.cancelled&&result.uri){
           await db.soundConfigs.update(id,{uri:result.uri});
           await loadSounds();
+          flash("ok");
+          return;
         }
-      }catch(e){
-        // On web, Ringtones.pick returns cancelled
-        flash("err");
+      }catch(_){}
+      // Fallback: show ringtone list
+      try{
+        const res=await Ringtones.list({type:"notification"});
+        if(res.ringtones.length>0){setRingList(res.ringtones);setPickingFor(id);return;}
+      }catch(_){}
+      flash("err");
+    }
+
+    async function selectFromList(uri:string){
+      if(pickingFor){
+        await db.soundConfigs.update(pickingFor,{uri});
+        await loadSounds();
+        setPickingFor(null);setRingList([]);
+        flash("ok");
       }
     }
 
     async function testSound(id:string){
       const cfg=soundCfgs.find(s=>s.id===id);
-      if(cfg?.uri){try{await Ringtones.play({uri:cfg.uri});}catch(_){playWebTone();}}
-      else playWebTone();
+      if(cfg?.uri){try{await Ringtones.play({uri:cfg.uri});return;}catch(_){}}
+      playWebTone();
     }
 
     async function clearSound(id:string){
@@ -225,7 +241,7 @@ export default function MatchReport(){
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
       <div style={{padding:"16px 16px 100px"}}>
-        <NavBar onHome={goHome} title="Sound-Einstellungen"/>
+        <NavBar onHome={goHome} title="Sound-Einstellungen" onBack={goHome}/>
 
         <div style={{fontSize:13,color:C.txd,marginBottom:16}}>Wähle für jedes Ereignis einen Geräte-Sound. Ohne Auswahl wird ein Standard-Ton verwendet.</div>
 
@@ -246,7 +262,16 @@ export default function MatchReport(){
             </div>
           );
         })}
+
+        {msg==="ok"&&<div style={{padding:10,background:`${C.grn}20`,borderRadius:10,fontSize:13,color:C.grn,textAlign:"center",marginTop:8}}>✅ Sound gespeichert!</div>}
+        {msg==="err"&&<div style={{padding:10,background:`${C.red}20`,borderRadius:10,fontSize:13,color:C.red,textAlign:"center",marginTop:8}}>Sound-Auswahl nicht verfügbar. Bitte Berechtigungen prüfen.</div>}
       </div>
+
+      {pickingFor&&ringList.length>0&&<Modal title={`Sound wählen: ${labels[pickingFor]||pickingFor}`} onClose={()=>{setPickingFor(null);setRingList([]);}}>
+        <div style={{maxHeight:300,overflowY:"auto"}}>
+          {ringList.map((r,i)=>(<button key={i} onClick={()=>selectFromList(r.uri)} style={{display:"block",width:"100%",padding:"10px 14px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,cursor:"pointer",textAlign:"left",marginBottom:4,fontSize:13}}>{r.title}</button>))}
+        </div>
+      </Modal>}
     </div>);
   }
 
@@ -440,21 +465,42 @@ export default function MatchReport(){
 
   /* ═══ REVIEW ═══ */
   if(screen==="review"){
+    const [addMin,setAddMin]=useState("");
+    const [addHalf2,setAddHalf2]=useState(1);
     const hz1r=evts.filter(e=>e.half===1&&e.type!=="info"),hz2r=evts.filter(e=>e.half===2&&e.type!=="info");
     const o1r=evts.find(e=>e.half===1&&e.type==="info"),o2r=evts.find(e=>e.half===2&&e.type==="info");
+
+    // Manual add functions for review
+    function revGoal(team:string,goalType:string,player:any){
+      const min=addMin||"0";const h=addHalf2;
+      const own=goalType==="Eigentor";
+      if(own){if(team==="home")setAS(s=>s+1);else setHS(s=>s+1);}
+      else{if(team==="home")setHS(s=>s+1);else setAS(s=>s+1);}
+      setEvts(x=>[...x,{type:"goal",goalType,half:h,player,team,id:`rg-${Date.now()}`,displayTime:`${min}'`}]);
+      setModal(null);setAddMin("");
+    }
+    function revCard(team:string,cardType:string,player:any){
+      const min=addMin||"0";const h=addHalf2;
+      setEvts(x=>[...x,{type:"card",cardType,half:h,player,team,id:`rc-${Date.now()}`,displayTime:`${min}'`}]);
+      setModal(null);setAddMin("");
+    }
+    function revSub(team:string,outP:any,inP:any){
+      const min=addMin||"0";const h=addHalf2;
+      setEvts(x=>[...x,{type:"sub",half:h,outPlayer:outP,inPlayer:inP,team,id:`rs-${Date.now()}`,displayTime:`${min}'`}]);
+      setModal(null);setAddMin("");
+    }
+
     const evRowR=(ev:any)=>(<div key={ev.id} style={{fontSize:13,padding:"8px 0",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.bdr}40`}}>
       <span style={{color:ev.half===1?C.grn:C.blu,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,minWidth:44}}>{ev.displayTime}</span>
-      <span style={{flex:1}}>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&<span style={{color:C.yel}}>({ev.goalType}) </span>}{ev.player.number} {ev.player.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.player.number} {ev.player.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number} → {ev.inPlayer.number} {ev.inPlayer.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span>
-      <button onClick={()=>delEv(ev)} style={{background:C.red,border:"none",color:"#fff",cursor:"pointer",padding:"6px 10px",borderRadius:8,fontSize:11,fontWeight:600,flexShrink:0}}>Löschen</button>
+      <span style={{flex:1}}>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&<span style={{color:C.yel}}>({ev.goalType}) </span>}{ev.player?.number} {ev.player?.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.player?.number} {ev.player?.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer?.number} → {ev.inPlayer?.number} {ev.inPlayer?.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span>
+      <button onClick={()=>delEv(ev)} style={{background:C.red,border:"none",color:"#fff",cursor:"pointer",padding:"6px 10px",borderRadius:8,fontSize:11,fontWeight:600,flexShrink:0}}>X</button>
     </div>);
+
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
       <div style={{padding:"16px 16px 100px"}}>
         <NavBar onHome={goHome} title="Korrektur" onBack={()=>setScreen("game")}/>
-        <div style={{textAlign:"center",marginBottom:20}}>
-          <div style={{fontSize:20,fontWeight:800,color:C.org}}><Edit size={18} style={{verticalAlign:"middle",marginRight:6}}/>Überprüfung</div>
-          <div style={{fontSize:12,color:C.txd,marginTop:4}}>Korrigiere Einträge vor dem Export</div>
-        </div>
+
         <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20}}>
             <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:C.txd}}>{ht}</div><div style={{fontSize:40,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{hS}</div></div>
@@ -462,20 +508,82 @@ export default function MatchReport(){
             <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:C.txd}}>{at}</div><div style={{fontSize:40,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{aS}</div></div>
           </div>
           {htH!==null&&<div style={{fontSize:13,color:C.txd,marginTop:4}}>HZ: {htH}:{htA}</div>}
-          <div style={{fontSize:10,color:C.org,marginTop:6}}>Tore löschen korrigiert den Spielstand automatisch</div>
         </div>
+
+        {/* ADD ACTION */}
+        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.grn}40`}}>
+          <div style={{fontSize:15,fontWeight:700,color:C.grn,marginBottom:12}}><Plus size={16} style={{verticalAlign:"middle",marginRight:6}}/>Aktion hinzufügen</div>
+          <div style={{display:"flex",gap:8,marginBottom:10}}>
+            <div style={{flex:1}}>
+              <label style={{fontSize:11,color:C.txd,display:"block",marginBottom:4}}>Minute</label>
+              <input value={addMin} onChange={(e:any)=>setAddMin(e.target.value)} type="number" placeholder="z.B. 12" style={{...inp,textAlign:"center",fontSize:16,padding:"8px"}}/>
+            </div>
+            <div style={{flex:1}}>
+              <label style={{fontSize:11,color:C.txd,display:"block",marginBottom:4}}>Halbzeit</label>
+              <div style={{display:"flex",gap:4}}>
+                <button onClick={()=>setAddHalf2(1)} style={{flex:1,padding:8,borderRadius:8,background:addHalf2===1?C.grn:C.card2,color:"#fff",border:`1px solid ${addHalf2===1?C.grn:C.bdr}`,fontWeight:600,fontSize:13,cursor:"pointer"}}>1. HZ</button>
+                <button onClick={()=>setAddHalf2(2)} style={{flex:1,padding:8,borderRadius:8,background:addHalf2===2?C.blu:C.card2,color:"#fff",border:`1px solid ${addHalf2===2?C.blu:C.bdr}`,fontWeight:600,fontSize:13,cursor:"pointer"}}>2. HZ</button>
+              </div>
+            </div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            <Btn small color={C.grn} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-goal");}}><CircleDot size={14}/> Tor {ht||"Heim"}</Btn>
+            <Btn small color={C.grn} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-goal");}}><CircleDot size={14}/> Tor {at||"Gast"}</Btn>
+            <Btn small color={C.yel} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-card");}}><RectangleHorizontal size={14}/> Karte {ht||"Heim"}</Btn>
+            <Btn small color={C.yel} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-card");}}><RectangleHorizontal size={14}/> Karte {at||"Gast"}</Btn>
+            <Btn small color={C.blu} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-sub");}}><ArrowLeftRight size={14}/> Wechsel {ht||"H"}</Btn>
+            <Btn small color={C.blu} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-sub");}}><ArrowLeftRight size={14}/> Wechsel {at||"G"}</Btn>
+          </div>
+        </div>
+
+        {/* EVENT LIST */}
         <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:15,fontWeight:700,marginBottom:12}}>Ereignisse ({hz1r.length+hz2r.length})</div>
           {hz1r.length>0&&<div style={{marginBottom:14}}><div style={{fontSize:12,fontWeight:700,color:C.grn,marginBottom:6,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>1. Halbzeit{o1r&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o1r.text}</span>}</div>{hz1r.map(evRowR)}</div>}
           {hz2r.length>0&&<div><div style={{fontSize:12,fontWeight:700,color:C.blu,marginBottom:6,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>2. Halbzeit{o2r&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o2r.text}</span>}</div>{hz2r.map(evRowR)}</div>}
           {hz1r.length===0&&hz2r.length===0&&<div style={{textAlign:"center",color:C.txd,padding:16}}>Keine Ereignisse</div>}
         </div>
+
         <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Bemerkungen</div>
           <textarea value={notes} onChange={(e:any)=>setNotes(e.target.value)} placeholder="Besondere Vorkommnisse..." style={{...inp,minHeight:90,resize:"vertical",fontSize:14}}/>
         </div>
+
         <Btn full color={C.grn} onClick={()=>setScreen("report")}><Save size={18}/> Alles korrekt — Spielbericht</Btn>
       </div>
+
+      {/* Review Modals */}
+      {modal==="rev-goal"&&<Modal title={`Tor — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
+        {mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <Btn full color={C.grn} onClick={()=>{setMD({gt:"Tor"});setMS(1);}}>⚽ Tor</Btn>
+          <Btn full color={C.yel} onClick={()=>{setMD({gt:"Elfmeter"});setMS(1);}}>⚽ Elfmeter</Btn>
+          <Btn full color={C.red} onClick={()=>{setMD({gt:"Eigentor"});setMS(1);}}>⚽ Eigentor</Btn>
+        </div>:<div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Torschütze ({mD.gt})</div>
+          {allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revGoal(mT!,mD.gt,pl)}/>)}
+        </div>}
+      </Modal>}
+
+      {modal==="rev-card"&&<Modal title={`Karte — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
+        {mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <Btn full color={C.yel} onClick={()=>{setMD({ct:"Gelb"});setMS(1);}}>🟨 Gelb</Btn>
+          <Btn full color={C.red} onClick={()=>{setMD({ct:"Rot"});setMS(1);}}>🟥 Rot</Btn>
+          <Btn full color={C.org} onClick={()=>{setMD({ct:"Zeitstrafe"});setMS(1);}}>⏱️ Zeitstrafe</Btn>
+        </div>:<div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler ({mD.ct})</div>
+          {allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revCard(mT!,mD.ct,pl)}/>)}
+        </div>}
+      </Modal>}
+
+      {modal==="rev-sub"&&<Modal title={`Wechsel — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
+        {mS===0?<div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler raus</div>
+          {allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>{setMD({out:pl});setMS(1);}}/>)}
+        </div>:<div style={{display:"flex",flexDirection:"column",gap:4}}>
+          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler rein (für #{mD.out?.number})</div>
+          {allP(mT!).filter(p=>p.id!==mD.out?.id).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revSub(mT!,mD.out,pl)}/>)}
+        </div>}
+      </Modal>}
     </div>);
   }
 

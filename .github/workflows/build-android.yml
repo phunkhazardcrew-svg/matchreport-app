@@ -39,6 +39,9 @@ jobs:
       - name: Sync Capacitor
         run: npx cap sync android
 
+      - name: Inject custom Ringtone plugin
+        run: bash scripts/setup-android.sh
+
       - name: Build debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon --info 2>&1 | tail -50
