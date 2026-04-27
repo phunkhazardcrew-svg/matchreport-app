@@ -66,11 +66,11 @@ export const PRESETS: SoundPreset[] = [
   { id: 'sub-click', name: '🔊 Signal', category: 'sub', play: () => { tone(600, 100, 'triangle', 0.25); setTimeout(()=>tone(800,100,'triangle',0.25),150); } },
 
   // HALFTIME sounds
-  { id: 'ht-whistle', name: '🏁 Schlusspfiff lang', category: 'halftime', play: () => { tone(3200,300); setTimeout(()=>tone(3200,300),400); setTimeout(()=>tone(3200,600),800); } },
-  { id: 'ht-horn', name: '📯 Horn', category: 'halftime', play: () => tone(440, 1000, 'sawtooth', 0.2) },
+  { id: 'ht-whistle', name: '🏁 Schlusspfiff lang', category: 'halftime', play: () => { tone(3200,300,'sine',1.0); setTimeout(()=>tone(3200,300,'sine',1.0),400); setTimeout(()=>tone(3200,600,'sine',1.0),800); } },
+  { id: 'ht-horn', name: '📯 Horn', category: 'halftime', play: () => tone(440, 1000, 'sawtooth', 0.8) },
 
   // FULLTIME sounds
-  { id: 'ft-triple', name: '🏆 Dreifachpfiff', category: 'fulltime', play: () => { tone(3200,200); setTimeout(()=>tone(3200,200),300); setTimeout(()=>tone(3600,400),600); } },
+  { id: 'ft-triple', name: '🏆 Dreifachpfiff', category: 'fulltime', play: () => { tone(3200,200,'sine',1.0); setTimeout(()=>tone(3200,200,'sine',1.0),300); setTimeout(()=>tone(3600,400,'sine',1.0),600); } },
   { id: 'ft-siren', name: '🚨 Sirene', category: 'fulltime', play: () => {
     try{
       const ctx=getCtx();const g=ctx.createGain();g.connect(ctx.destination);g.gain.value=0.2;
@@ -80,6 +80,16 @@ export const PRESETS: SoundPreset[] = [
       o.start(now);o.stop(now+1.2);
     }catch(_){}
   }},
+
+  // SILENT option (available for all categories)
+  { id: 'silent-goal', name: '🔇 Stumm', category: 'goal', play: () => {} },
+  { id: 'silent-eigentor', name: '🔇 Stumm', category: 'eigentor', play: () => {} },
+  { id: 'silent-elfmeter', name: '🔇 Stumm', category: 'elfmeter', play: () => {} },
+  { id: 'silent-yellow', name: '🔇 Stumm', category: 'yellow', play: () => {} },
+  { id: 'silent-red', name: '🔇 Stumm', category: 'red', play: () => {} },
+  { id: 'silent-sub', name: '🔇 Stumm', category: 'sub', play: () => {} },
+  { id: 'silent-halftime', name: '🔇 Stumm', category: 'halftime', play: () => {} },
+  { id: 'silent-fulltime', name: '🔇 Stumm', category: 'fulltime', play: () => {} },
 ];
 
 export function getPresetsForCategory(cat: string): SoundPreset[] {

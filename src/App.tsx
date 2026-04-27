@@ -12,6 +12,7 @@ import {
 import { db, initSoundDefaults, requestPersistentStorage } from './db';
 import type { Match, SoundConfig } from './db';
 import { Ringtones } from './plugins/ringtones';
+import { App as CapApp } from '@capacitor/app';
 import { getPresetsForCategory, playPresetById, PRESETS } from './utils/soundPresets';
 
 function fmt(sec:number){const m=Math.floor(Math.abs(sec)/60);const s=Math.abs(sec)%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;}
@@ -134,6 +135,20 @@ export default function MatchReport(){
     loadArchive();
   },[]);
 
+  // Fix 3: Android back button → navigate back instead of closing app
+  const screenHistory=useRef<string[]>(['home']);
+  const origSetScreen=setScreen;
+  const navTo=(s:string)=>{screenHistory.current.push(s);origSetScreen(s);};
+  // Override setScreen to track history
+  useEffect(()=>{
+    const handler=CapApp.addListener('backButton',({canGoBack})=>{
+      const hist=screenHistory.current;
+      if(hist.length>1){hist.pop();origSetScreen(hist[hist.length-1]);}
+      else{CapApp.exitApp();}
+    });
+    return()=>{handler.then(h=>h.remove());};
+  },[]);
+
   async function loadArchive(){const m=await db.matches.orderBy('createdAt').reverse().toArray();setArchivedMatches(m);}
   async function loadSounds(){const s=await db.soundConfigs.toArray();setSoundCfgs(s);}
 
@@ -151,14 +166,14 @@ export default function MatchReport(){
   },[tl,half,hd,isOt,otS]);
 
   function flash(m:string){setMsg(m);setTimeout(()=>setMsg(""),3000);}
-  function goHome(){setScreen("home");}
+  function goHome(){screenHistory.current=["home"];setScreen("home");}
 
   function applyCSV(t:string){const r=parseCSV(t);if(r){if(r.homeTeam)setHt(r.homeTeam);if(r.awayTeam)setAt(r.awayTeam);if(r.homePlayers.length)setHp(r.homePlayers);if(r.awayPlayers.length)setAp(r.awayPlayers);flash("ok");return true;}flash("err");return false;}
   function onFile(e:any){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>applyCSV(ev.target?.result as string);r.readAsText(f);e.target.value="";}
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
   function startT(){if(tl===null)setTl(hd*60);setRun(true);setPau(false);setStarted(true);}
   function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);setModal(null);}
-  function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);setScreen("review");}
+  function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);navTo("review");}
 
   function openAct(t:string,tm:string){setMT(tm);setMS(0);setMD({});setModal(t);}
   function selGT(t:string){setMD({gt:t});setMS(1);}
@@ -168,7 +183,7 @@ export default function MatchReport(){
   function selSO(p:any){setMD({out:p});setMS(1);}
   function selSI(p:any){const fn=mT==="home"?setHOn:setAOn;fn(x=>x.filter(id=>id!==mD.out.id).concat(p.id));setEvts(x=>[...x,{type:"sub",half,outPlayer:mD.out,inPlayer:p,team:mT,id:`s-${Date.now()}`,displayTime:getDispMin()}]);playEventSound('sub');setModal(null);}
   function delEv(ev:any){setEvts(x=>x.filter(e=>e.id!==ev.id));if(ev.type==="goal"){const own=ev.goalType==="Eigentor";if(own){if(ev.team==="home")setAS(s=>Math.max(0,s-1));else setHS(s=>Math.max(0,s-1));}else{if(ev.team==="home")setHS(s=>Math.max(0,s-1));else setAS(s=>Math.max(0,s-1));}}}
-  function resetAll(){setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);setScreen("home");}
+  function resetAll(){setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);screenHistory.current=["home"];setScreen("home");}
 
   async function saveMatchToArchive(){
     const match:Match={id:crypto.randomUUID(),homeTeam:ht,awayTeam:at,homePlayers:hp,awayPlayers:ap,homeScore:hS,awayScore:aS,htHomeScore:htH,htAwayScore:htA,halfDuration:hd,playerCount:pc,events:evts,notes,status:'finished',createdAt:Date.now(),updatedAt:Date.now()};
@@ -193,10 +208,12 @@ export default function MatchReport(){
         <div style={{color:C.txd,fontSize:13,marginBottom:40}}>Fußball-Spielbericht</div>
 
         <div style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:12}}>
-          {hasActive&&<Btn full color={C.org} onClick={()=>setScreen("game")}><Play size={18}/> Laufendes Spiel fortsetzen</Btn>}
-          <Btn full color={C.grn} onClick={()=>setScreen("settings")}><Plus size={18}/> Neues Spiel</Btn>
-          <Btn full color={C.blu} onClick={()=>{loadArchive();setScreen("archive");}}><Archive size={18}/> Spielarchiv ({archivedMatches.length})</Btn>
-          <Btn full color={C.card2} onClick={()=>{loadSounds();setScreen("sounds");}}><Music size={18}/> Sound-Einstellungen</Btn>
+          {hasActive&&<Btn full color={C.org} onClick={()=>navTo("game")}><Play size={18}/> Laufendes Spiel fortsetzen</Btn>}
+          {hasActive&&<Btn full color={C.red} onClick={()=>{if(confirm('Laufendes Spiel abbrechen? Alle Daten gehen verloren.')){resetAll();}}}><X size={18}/> Laufendes Spiel abbrechen</Btn>}
+          <Btn full color={C.grn} onClick={()=>navTo("settings")}><Plus size={18}/> Neues Spiel</Btn>
+          <Btn full color={C.blu} onClick={()=>{loadArchive();navTo("archive");}}><Archive size={18}/> Spielarchiv ({archivedMatches.length})</Btn>
+          <Btn full color={C.card2} onClick={()=>{loadSounds();navTo("sounds");}}><Music size={18}/> Sound-Einstellungen</Btn>
+          <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>{if(confirm('App beenden?')){CapApp.exitApp();}}}><Square size={16}/> App beenden</Btn></div>
         </div>
 
         <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 2.0 • Offline-fähig</div>
@@ -344,13 +361,42 @@ export default function MatchReport(){
       <div style={{padding:"16px 16px 120px"}}>
         <NavBar title="Spielarchiv"/>
         {archivedMatches.length===0?<div style={{textAlign:"center",color:C.txd,padding:40}}>Noch keine archivierten Spiele</div>:
-          archivedMatches.map(m=>(<div key={m.id} style={{background:C.card,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.bdr}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <button onClick={()=>setViewMatch(m)} style={{background:"none",border:"none",color:C.tx,cursor:"pointer",textAlign:"left",flex:1}}>
-              <div style={{fontSize:14,fontWeight:700}}>{m.homeTeam} {m.homeScore}:{m.awayScore} {m.awayTeam}</div>
-              <div style={{fontSize:11,color:C.txd}}>{new Date(m.createdAt).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})} • {m.halfDuration*2} min • {m.events.filter(e=>e.type!=='info').length} Aktionen</div>
-            </button>
-            <button onClick={()=>{if(confirm('Spiel löschen?'))deleteArchivedMatch(m.id);}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:8,opacity:0.6}}><Trash2 size={16}/></button>
-          </div>))
+          archivedMatches.map(m=>{
+            const isWin=m.homeScore>m.awayScore;const isDraw=m.homeScore===m.awayScore;const isLoss=m.homeScore<m.awayScore;
+            const resultColor=isWin?C.grn:isDraw?C.yel:C.red;
+            const goals=m.events.filter(e=>e.type==='goal').length;
+            const cards=m.events.filter(e=>e.type==='card').length;
+            const subs=m.events.filter(e=>e.type==='sub').length;
+            return(<div key={m.id} style={{background:C.card,borderRadius:14,marginBottom:12,border:`1px solid ${C.bdr}`,overflow:"hidden"}}>
+              <button onClick={()=>setViewMatch(m)} style={{background:"none",border:"none",color:C.tx,cursor:"pointer",textAlign:"left",width:"100%",padding:0}}>
+                {/* Date bar */}
+                <div style={{background:C.card2,padding:"6px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                  <span style={{fontSize:12,color:C.txd,fontWeight:600}}>{new Date(m.createdAt).toLocaleDateString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',year:'numeric'})}</span>
+                  <span style={{fontSize:10,color:C.txd}}>{m.halfDuration*2} min</span>
+                </div>
+                {/* Score */}
+                <div style={{padding:"12px 14px",display:"flex",alignItems:"center",gap:12}}>
+                  <div style={{flex:1,textAlign:"right"}}><div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{m.homeTeam}</div></div>
+                  <div style={{background:`${resultColor}20`,borderRadius:10,padding:"6px 14px",display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{fontSize:24,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:resultColor}}>{m.homeScore}</span>
+                    <span style={{color:C.txd,fontSize:14}}>:</span>
+                    <span style={{fontSize:24,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:resultColor}}>{m.awayScore}</span>
+                  </div>
+                  <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,marginBottom:2}}>{m.awayTeam}</div></div>
+                </div>
+                {/* Stats bar */}
+                <div style={{padding:"0 14px 10px",display:"flex",gap:12,fontSize:11,color:C.txd}}>
+                  {goals>0&&<span>⚽ {goals} Tore</span>}
+                  {cards>0&&<span>🟨 {cards} Karten</span>}
+                  {subs>0&&<span>🔄 {subs} Wechsel</span>}
+                  {m.htHomeScore!==null&&<span>HZ: {m.htHomeScore}:{m.htAwayScore}</span>}
+                </div>
+              </button>
+              <div style={{borderTop:`1px solid ${C.bdr}`,padding:"8px 14px",display:"flex",justifyContent:"flex-end"}}>
+                <button onClick={(e)=>{e.stopPropagation();if(confirm('Spiel löschen?'))deleteArchivedMatch(m.id);}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:4,opacity:0.5,fontSize:11,display:"flex",alignItems:"center",gap:4}}><Trash2 size={13}/> Löschen</button>
+              </div>
+            </div>);
+          })
         }
       <BottomBar onHome={goHome} screen={screen}/>
       </div>
@@ -420,7 +466,7 @@ export default function MatchReport(){
           </div>
         ))}
 
-        <Btn full color={C.grn} onClick={()=>{if(!ht||!at){alert("Bitte Mannschaftsnamen eingeben!");return;}setScreen("game");}}><Play size={18}/> Zum Spielfeld</Btn>
+        <Btn full color={C.grn} onClick={()=>{if(!ht||!at){alert("Bitte Mannschaftsnamen eingeben!");return;}navTo("game");}}><Play size={18}/> Zum Spielfeld</Btn>
       </div>
 
       <BottomBar onHome={goHome} screen={screen}/>
@@ -444,7 +490,7 @@ export default function MatchReport(){
     <div style={{background:C.bg,height:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{flex:"0 0 auto",padding:"12px 16px",textAlign:"center",background:`linear-gradient(180deg,${C.card} 0%,${C.bg} 100%)`,borderBottom:`1px solid ${C.bdr}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <button onClick={()=>setScreen("settings")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><SettingsIcon size={15}/> Einstellungen</button>
+          <button onClick={()=>navTo("settings")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><SettingsIcon size={15}/> Einstellungen</button>
           <div style={{fontSize:12,fontWeight:700,color:half===1?C.grn:C.blu,background:half===1?`${C.grn}20`:`${C.blu}20`,padding:"4px 12px",borderRadius:20}}>{half}. Halbzeit</div>
           <button onClick={goHome} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><Home size={15}/></button>
         </div>
@@ -531,7 +577,7 @@ export default function MatchReport(){
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
       <div style={{padding:"16px 16px 120px"}}>
-        <NavBar title="Korrektur & Bearbeitung" onBack={()=>setScreen("game")}/>
+        <NavBar title="Korrektur & Bearbeitung" onBack={()=>navTo("game")}/>
 
         {/* Editable Score + Teams */}
         <div style={{background:C.card,borderRadius:14,padding:14,marginBottom:14,border:`1px solid ${C.bdr}`}}>
@@ -590,7 +636,7 @@ export default function MatchReport(){
           <textarea value={notes} onChange={(e:any)=>setNotes(e.target.value)} placeholder="Besondere Vorkommnisse..." style={{...inp,minHeight:80,resize:"vertical",fontSize:13}}/>
         </div>
 
-        <Btn full color={C.grn} onClick={()=>setScreen("report")}><Save size={18}/> Alles korrekt — Spielbericht</Btn>
+        <Btn full color={C.grn} onClick={()=>navTo("report")}><Save size={18}/> Alles korrekt — Spielbericht</Btn>
       </div>
 
       <BottomBar onHome={goHome} screen={screen}/>
@@ -637,7 +683,7 @@ export default function MatchReport(){
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
       <div style={{padding:"16px 16px 120px"}}>
-        <NavBar title="Spielbericht" onBack={()=>setScreen("review")}/>
+        <NavBar title="Spielbericht" onBack={()=>navTo("review")}/>
 
         <div style={{background:C.card,borderRadius:16,padding:20,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
           <div style={{fontSize:12,color:C.txd,marginBottom:10,textTransform:"uppercase",fontWeight:600}}>Endergebnis</div>
