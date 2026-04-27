@@ -30,14 +30,24 @@ jobs:
         run: npx cap sync android
       - name: Inject Ringtone plugin
         run: bash scripts/setup-android.sh
+      - name: Show injected files
+        run: |
+          echo "=== MainActivity.java ==="
+          cat android/app/src/main/java/com/matchreport/app/MainActivity.java
+          echo ""
+          echo "=== RingtonePlugin.kt ==="
+          cat android/app/src/main/java/com/matchreport/app/ringtones/RingtonePlugin.kt
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
+        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 | tail -80
       - name: List APK files
+        if: always()
         run: find android -name "*.apk" -type f 2>/dev/null || echo "No APK found"
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: matchreport-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
           retention-days: 30
