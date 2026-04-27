@@ -2,14 +2,24 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#0a0f1a" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <title>Matchreport</title>
   <style>
+    :root {
+      --sat: env(safe-area-inset-top, 24px);
+      --sab: env(safe-area-inset-bottom, 0px);
+    }
     * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
     body { background:#0a0f1a; font-family:'Segoe UI',system-ui,sans-serif; overflow-x:hidden; }
-    #root { min-height:100vh; }
+    #root { min-height:100vh; padding-top: var(--sat); }
+    /* Prevent pull-to-refresh */
+    html { overscroll-behavior: none; }
+    /* Smooth scrolling */
+    * { -webkit-overflow-scrolling: touch; }
+    /* Better touch targets */
+    button, input, textarea, select { touch-action: manipulation; }
   </style>
 </head>
 <body>

@@ -7,8 +7,6 @@ import {
   Volume2, VolumeX, Archive, Music
 } from "lucide-react";
 
-
-
 import { db, initSoundDefaults, requestPersistentStorage } from './db';
 import type { Match, SoundConfig } from './db';
 import { Ringtones } from './plugins/ringtones';
@@ -76,9 +74,9 @@ function Modal({title,onClose,children}:any){return(<div onClick={onClose} style
 
 function PBtn({p,onClick}:any){return(<button onClick={()=>onClick(p)} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,color:C.tx,textAlign:"left",width:"100%",marginBottom:4}}><span style={{background:C.grn,color:"#fff",borderRadius:6,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>{p.number}</span><span style={{fontSize:14,fontWeight:500}}>{p.name}{p.isGoalkeeper&&<span style={{color:C.yel,marginLeft:6,fontSize:11}}>TW</span>}{p.isCaptain&&<span style={{color:C.blu,marginLeft:6,fontSize:11}}>C</span>}</span></button>);}
 
-function NavBar({title,onBack}:any){return(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>{onBack?<button onClick={onBack} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13}}><ChevronLeft size={18}/> Zurück</button>:<div/>}{title&&<span style={{fontSize:13,fontWeight:700,color:C.grn}}>{title}</span>}<div style={{width:40}}/></div>);}
+function NavBar({title,onBack}:any){return(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,paddingTop:4}}>{onBack?<button onClick={onBack} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:10,color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13,padding:"8px 14px"}}><ChevronLeft size={18}/> Zurück</button>:<div/>}{title&&<span style={{fontSize:14,fontWeight:700,color:C.grn}}>{title}</span>}<div style={{width:40}}/></div>);}
 
-function BottomBar({onHome,screen}:any){if(screen==="home")return null;return(<div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:50,background:C.card,borderTop:`1px solid ${C.bdr}`,padding:"8px 16px 20px",display:"flex",justifyContent:"center"}}><button onClick={onHome} style={{background:C.grn,border:"none",borderRadius:14,padding:"14px 40px",cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",gap:8,fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",boxShadow:"0 -2px 20px rgba(16,185,129,0.3)"}}><Home size={22}/> Hauptmenü</button></div>);}
+function BottomBar({onHome,screen}:any){if(screen==="home"||screen==="game")return null;return(<div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:50,background:C.card,borderTop:`2px solid ${C.grn}40`,padding:"10px 16px calc(12px + env(safe-area-inset-bottom, 0px))",display:"flex",justifyContent:"center"}}><button onClick={onHome} style={{background:C.grn,border:"none",borderRadius:12,padding:"12px 36px",cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",gap:8,fontSize:15,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",boxShadow:"0 -2px 16px rgba(16,185,129,0.25)"}}><Home size={20}/> Hauptmenü</button></div>);}
 
 export default function MatchReport(){
   const [screen,setScreen]=useState("home");
@@ -125,6 +123,8 @@ export default function MatchReport(){
   const [addMin,setAddMin]=useState("");
   const [addHalf2,setAddHalf2]=useState(1);
   const [editEvt,setEditEvt]=useState<any>(null);
+  const [scoreFlash,setScoreFlash]=useState("");
+  const [confirmAction,setConfirmAction]=useState<{title:string,text:string,onOk:()=>void}|null>(null);
   const tmr=useRef<any>(null);
   const inp:any={width:"100%",boxSizing:"border-box",padding:"10px 14px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,fontSize:15,outline:"none"};
 
@@ -177,7 +177,7 @@ export default function MatchReport(){
 
   function openAct(t:string,tm:string){setMT(tm);setMS(0);setMD({});setModal(t);}
   function selGT(t:string){setMD({gt:t});setMS(1);}
-  function selGP(p:any){const gt=mD.gt;const own=gt==="Eigentor";if(own){if(mT==="home")setAS(s=>s+1);else setHS(s=>s+1);}else{if(mT==="home")setHS(s=>s+1);else setAS(s=>s+1);}setEvts(x=>[...x,{type:"goal",goalType:gt,half,player:p,team:mT,id:`g-${Date.now()}`,displayTime:getDispMin()}]);playEventSound(gt==='Eigentor'?'eigentor':gt==='Elfmeter'?'elfmeter':'goal');vibrate();setModal(null);}
+  function selGP(p:any){const gt=mD.gt;const own=gt==="Eigentor";if(own){if(mT==="home")setAS(s=>s+1);else setHS(s=>s+1);}else{if(mT==="home")setHS(s=>s+1);else setAS(s=>s+1);}setEvts(x=>[...x,{type:"goal",goalType:gt,half,player:p,team:mT,id:`g-${Date.now()}`,displayTime:getDispMin()}]);playEventSound(gt==='Eigentor'?'eigentor':gt==='Elfmeter'?'elfmeter':'goal');vibrate();setScoreFlash(mT||"");setTimeout(()=>setScoreFlash(""),800);setModal(null);}
   function selCT(t:string){setMD({ct:t});setMS(1);}
   function selCP(p:any){setEvts(x=>[...x,{type:"card",cardType:mD.ct,half,player:p,team:mT,id:`c-${Date.now()}`,displayTime:getDispMin()}]);playEventSound(mD.ct==='Gelb'?'yellow':'red');setModal(null);}
   function selSO(p:any){setMD({out:p});setMS(1);}
@@ -209,11 +209,13 @@ export default function MatchReport(){
 
         <div style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:12}}>
           {hasActive&&<Btn full color={C.org} onClick={()=>navTo("game")}><Play size={18}/> Laufendes Spiel fortsetzen</Btn>}
-          {hasActive&&<Btn full color={C.red} onClick={()=>{if(confirm('Laufendes Spiel abbrechen? Alle Daten gehen verloren.')){resetAll();}}}><X size={18}/> Laufendes Spiel abbrechen</Btn>}
+          {hasActive&&<Btn full color={C.red} onClick={()=>setConfirmAction({title:'Spiel abbrechen?',text:'Alle Spieldaten werden gelöscht und nicht archiviert.',onOk:()=>{resetAll();setConfirmAction(null);}})}><X size={18}/> Laufendes Spiel abbrechen</Btn>}
           <Btn full color={C.grn} onClick={()=>navTo("settings")}><Plus size={18}/> Neues Spiel</Btn>
+          <div style={{fontSize:11,color:C.txd,textAlign:"center",marginTop:-8,marginBottom:4}}>Mannschaften aufstellen & Spiel starten</div>
           <Btn full color={C.blu} onClick={()=>{loadArchive();navTo("archive");}}><Archive size={18}/> Spielarchiv ({archivedMatches.length})</Btn>
+          <div style={{fontSize:11,color:C.txd,textAlign:"center",marginTop:-8,marginBottom:4}}>Vergangene Spiele ansehen & exportieren</div>
           <Btn full color={C.card2} onClick={()=>{loadSounds();navTo("sounds");}}><Music size={18}/> Sound-Einstellungen</Btn>
-          <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>{if(confirm('App beenden?')){CapApp.exitApp();}}}><Square size={16}/> App beenden</Btn></div>
+          <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
         <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 2.0 • Offline-fähig</div>
@@ -262,7 +264,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 120px"}}>
+      <div style={{padding:"20px 16px 150px"}}>
         <NavBar title="Sound-Einstellungen" onBack={goHome}/>
         <div style={{fontSize:13,color:C.txd,marginBottom:16}}>Tippe auf ein Ereignis um den Sound zu ändern.</div>
 
@@ -325,7 +327,7 @@ export default function MatchReport(){
       const hz1=m.events.filter(e=>e.half===1&&e.type!=="info"),hz2=m.events.filter(e=>e.half===2&&e.type!=="info");
       return(
       <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-        <div style={{padding:"16px 16px 120px"}}>
+        <div style={{padding:"20px 16px 150px"}}>
           <NavBar title="Archiv" onBack={()=>setViewMatch(null)}/>
           <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
             <div style={{fontSize:12,color:C.txd,marginBottom:8}}>{new Date(m.createdAt).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})}</div>
@@ -358,7 +360,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 120px"}}>
+      <div style={{padding:"20px 16px 150px"}}>
         <NavBar title="Spielarchiv"/>
         {archivedMatches.length===0?<div style={{textAlign:"center",color:C.txd,padding:40}}>Noch keine archivierten Spiele</div>:
           archivedMatches.map(m=>{
@@ -393,7 +395,7 @@ export default function MatchReport(){
                 </div>
               </button>
               <div style={{borderTop:`1px solid ${C.bdr}`,padding:"8px 14px",display:"flex",justifyContent:"flex-end"}}>
-                <button onClick={(e)=>{e.stopPropagation();if(confirm('Spiel löschen?'))deleteArchivedMatch(m.id);}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:4,opacity:0.5,fontSize:11,display:"flex",alignItems:"center",gap:4}}><Trash2 size={13}/> Löschen</button>
+                <button onClick={(e)=>{e.stopPropagation();setConfirmAction({title:'Spiel löschen?',text:'Das archivierte Spiel wird unwiderruflich gelöscht.',onOk:()=>{deleteArchivedMatch(m.id);setConfirmAction(null);}});}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:4,opacity:0.5,fontSize:11,display:"flex",alignItems:"center",gap:4}}><Trash2 size={13}/> Löschen</button>
               </div>
             </div>);
           })
@@ -406,7 +408,7 @@ export default function MatchReport(){
   /* ═══ SETTINGS ═══ */
   if(screen==="settings"){return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 120px"}}>
+      <div style={{padding:"20px 16px 150px"}}>
         <NavBar title="Spieleinstellungen"/>
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
@@ -455,7 +457,11 @@ export default function MatchReport(){
                   <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 10px",background:C.card2,borderRadius:8,marginBottom:3}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontFamily:"'JetBrains Mono',monospace",fontWeight:700,color:isSt?C.grn:C.org,fontSize:14,minWidth:24,textAlign:"center"}}>{p.number}</span>
-                      <span style={{fontSize:13}}>{p.name}{p.isGoalkeeper&&<span style={{color:C.yel,marginLeft:4,fontSize:10}}>TW</span>}{p.isCaptain&&<span style={{color:C.blu,marginLeft:4,fontSize:10}}>C</span>}</span>
+                      <span style={{fontSize:13}}>{p.name}</span>
+                      <div style={{display:"flex",gap:3,marginLeft:"auto",marginRight:8}}>
+                        <button onClick={(e)=>{e.stopPropagation();if(k==="home")setHp(x=>x.map(q=>q.id===p.id?{...q,isGoalkeeper:!q.isGoalkeeper}:q));else setAp(x=>x.map(q=>q.id===p.id?{...q,isGoalkeeper:!q.isGoalkeeper}:q));}} style={{background:p.isGoalkeeper?C.yel:`${C.yel}20`,border:"none",borderRadius:4,padding:"2px 6px",color:p.isGoalkeeper?"#000":C.txd,cursor:"pointer",fontSize:10,fontWeight:700}}>TW</button>
+                        <button onClick={(e)=>{e.stopPropagation();if(k==="home")setHp(x=>x.map(q=>q.id===p.id?{...q,isCaptain:!q.isCaptain}:q));else setAp(x=>x.map(q=>q.id===p.id?{...q,isCaptain:!q.isCaptain}:q));}} style={{background:p.isCaptain?C.blu:`${C.blu}20`,border:"none",borderRadius:4,padding:"2px 6px",color:p.isCaptain?"#fff":C.txd,cursor:"pointer",fontSize:10,fontWeight:700}}>C</button>
+                      </div>
                     </div>
                     <button onClick={()=>{if(k==="home")setHp(x=>x.filter(q=>q.id!==p.id));else setAp(x=>x.filter(q=>q.id!==p.id));}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:4}}><Trash2 size={14}/></button>
                   </div>
@@ -466,7 +472,8 @@ export default function MatchReport(){
           </div>
         ))}
 
-        <Btn full color={C.grn} onClick={()=>{if(!ht||!at){alert("Bitte Mannschaftsnamen eingeben!");return;}navTo("game");}}><Play size={18}/> Zum Spielfeld</Btn>
+        <Btn full color={C.grn} onClick={()=>{if(!ht||!at){alert("Bitte Mannschaftsnamen eingeben!");return;}if(hp.length===0&&ap.length===0){alert("Bitte mindestens eine Mannschaft aufstellen!");}navTo("game");}}><Play size={18}/> Zum Spielfeld</Btn>
+        {hp.filter(p=>p.isStarter).length>0&&<div style={{fontSize:11,color:hp.filter(p=>p.isStarter).length>=pc?C.grn:C.org,textAlign:"center",marginTop:8}}>{ht||"Heim"}: {hp.filter(p=>p.isStarter).length}/{pc} Starter{hp.filter(p=>p.isStarter).length<pc?" ⚠️":""} • {at||"Gast"}: {ap.filter(p=>p.isStarter).length}/{pc} Starter{ap.filter(p=>p.isStarter).length<pc?" ⚠️":""}</div>}
       </div>
 
       <BottomBar onHome={goHome} screen={screen}/>
@@ -487,7 +494,7 @@ export default function MatchReport(){
 
   /* ═══ GAME ═══ */
   if(screen==="game"){return(
-    <div style={{background:C.bg,height:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{background:C.bg,height:"100dvh",color:C.tx,fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{flex:"0 0 auto",padding:"12px 16px",textAlign:"center",background:`linear-gradient(180deg,${C.card} 0%,${C.bg} 100%)`,borderBottom:`1px solid ${C.bdr}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <button onClick={()=>navTo("settings")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><SettingsIcon size={15}/> Einstellungen</button>
@@ -503,22 +510,29 @@ export default function MatchReport(){
       </div>
 
       <div style={{flex:"0 0 auto",padding:16,display:"flex",alignItems:"center",justifyContent:"center",gap:16}}>
-        <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:12,fontWeight:700,color:C.txd,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ht}</div><div style={{fontSize:48,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{hS}</div>{htH!==null&&<div style={{fontSize:14,color:C.txd,fontFamily:"'JetBrains Mono',monospace"}}>({htH})</div>}</div>
+        <div style={{flex:1,textAlign:"center",transition:"all 0.3s",transform:scoreFlash==="home"?"scale(1.15)":"scale(1)"}}><div style={{fontSize:12,fontWeight:700,color:C.txd,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ht}</div><div style={{fontSize:48,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:scoreFlash==="home"?C.grn:C.tx,transition:"color 0.3s"}}>{hS}</div>{htH!==null&&<div style={{fontSize:14,color:C.txd,fontFamily:"'JetBrains Mono',monospace"}}>({htH})</div>}</div>
         <div style={{fontSize:28,color:C.txd,fontWeight:300}}>:</div>
-        <div style={{flex:1,textAlign:"center"}}><div style={{fontSize:12,fontWeight:700,color:C.txd,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{at}</div><div style={{fontSize:48,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{aS}</div>{htA!==null&&<div style={{fontSize:14,color:C.txd,fontFamily:"'JetBrains Mono',monospace"}}>({htA})</div>}</div>
+        <div style={{flex:1,textAlign:"center",transition:"all 0.3s",transform:scoreFlash==="away"?"scale(1.15)":"scale(1)"}}><div style={{fontSize:12,fontWeight:700,color:C.txd,marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{at}</div><div style={{fontSize:48,fontWeight:900,fontFamily:"'JetBrains Mono',monospace",color:scoreFlash==="away"?C.grn:C.tx,transition:"color 0.3s"}}>{aS}</div>{htA!==null&&<div style={{fontSize:14,color:C.txd,fontFamily:"'JetBrains Mono',monospace"}}>({htA})</div>}</div>
       </div>
 
       <div style={{flex:1,overflowY:"auto",padding:"0 16px 16px",display:"flex",flexDirection:"column"}}>
+        {/* Timer hint */}
+        {!run&&!pau&&started&&<div style={{textAlign:"center",padding:"8px 12px",marginBottom:8,background:`${C.yel}15`,borderRadius:10,fontSize:12,color:C.yel}}>⏸ Timer pausiert — starte den Timer um Aktionen zu erfassen</div>}
+        {!started&&<div style={{textAlign:"center",padding:"8px 12px",marginBottom:8,background:`${C.grn}15`,borderRadius:10,fontSize:12,color:C.grn}}>▶ Starte den Timer um das Spiel zu beginnen</div>}
+
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flex:1}}>
           {[{k:"home",l:ht},{k:"away",l:at}].map(({k,l})=>(
             <div key={k} style={{display:"flex",flexDirection:"column",gap:8}}>
               <div style={{fontSize:11,fontWeight:700,color:C.txd,textAlign:"center",textTransform:"uppercase"}}>{l}</div>
-              <Btn full color={C.grn} onClick={()=>openAct("goal",k)} disabled={!run}><CircleDot size={15}/> Tor</Btn>
-              <Btn full color={C.yel} onClick={()=>openAct("card",k)} disabled={!run}><RectangleHorizontal size={15}/> Karte</Btn>
-              <Btn full color={C.blu} onClick={()=>openAct("sub",k)} disabled={!run}><ArrowLeftRight size={15}/> Wechsel</Btn>
+              <Btn full color={C.grn} onClick={()=>openAct("goal",k)} disabled={!run}><CircleDot size={16}/> Tor</Btn>
+              <Btn full color={C.yel} onClick={()=>openAct("card",k)} disabled={!run}><RectangleHorizontal size={16}/> Karte</Btn>
+              <Btn full color={C.blu} onClick={()=>openAct("sub",k)} disabled={!run}><ArrowLeftRight size={16}/> Wechsel</Btn>
             </div>
           ))}
         </div>
+
+        {/* Undo last action */}
+        {evts.filter(e=>e.type!=="info").length>0&&<div style={{marginTop:8}}><Btn full color="#334155" small onClick={()=>{const last=evts.filter(e=>e.type!=="info").pop();if(last)delEv(last);}}><RotateCcw size={14}/> Letzte Aktion rückgängig</Btn></div>}
         {evts.filter(e=>e.type!=="info").length>0&&<div style={{marginTop:12,background:C.card,borderRadius:12,padding:12,border:`1px solid ${C.bdr}`,maxHeight:120,overflowY:"auto"}}>
           <div style={{fontSize:11,color:C.txd,fontWeight:700,marginBottom:6,textTransform:"uppercase"}}>Letzte Aktionen</div>
           {[...evts].filter(e=>e.type!=="info").reverse().slice(0,5).map(ev=>(<div key={ev.id} style={{fontSize:12,padding:"3px 0",display:"flex",gap:8,alignItems:"center"}}><span style={{color:C.txd,fontFamily:"'JetBrains Mono',monospace",fontSize:11,minWidth:36}}>{ev.displayTime}</span><span>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&`(${ev.goalType}) `}{ev.player.number} {ev.player.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.player.number} {ev.player.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer.number}↔{ev.inPlayer.number}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span></div>))}
@@ -537,7 +551,7 @@ export default function MatchReport(){
 
   /* ═══ REVIEW — voller Editier-Zugriff ═══ */
   if(screen==="review"){
-    const hz1r=evts.filter(e=>e.half===1&&e.type!=="info"),hz2r=evts.filter(e=>e.half===2&&e.type!=="info");
+    const hz1r=evts.filter(e=>e.half===1&&e.type!=="info").sort((a,b)=>parseInt(a.displayTime)-parseInt(b.displayTime)),hz2r=evts.filter(e=>e.half===2&&e.type!=="info").sort((a,b)=>parseInt(a.displayTime)-parseInt(b.displayTime));
     const o1r=evts.find(e=>e.half===1&&e.type==="info"),o2r=evts.find(e=>e.half===2&&e.type==="info");
 
     function revGoal(team:string,goalType:string,player:any){
@@ -576,7 +590,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 120px"}}>
+      <div style={{padding:"20px 16px 150px"}}>
         <NavBar title="Korrektur & Bearbeitung" onBack={()=>navTo("game")}/>
 
         {/* Editable Score + Teams */}
@@ -682,7 +696,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 120px"}}>
+      <div style={{padding:"20px 16px 150px"}}>
         <NavBar title="Spielbericht" onBack={()=>navTo("review")}/>
 
         <div style={{background:C.card,borderRadius:16,padding:20,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
@@ -722,5 +736,16 @@ export default function MatchReport(){
       </div>
     </div>);
   }
+  /* ═══ GLOBAL CONFIRM MODAL ═══ */
+  if(confirmAction){return(<div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div style={{background:C.card,borderRadius:16,padding:24,width:"100%",maxWidth:340,border:`1px solid ${C.bdr}`}}>
+      <div style={{fontSize:18,fontWeight:700,color:C.tx,marginBottom:8}}>{confirmAction.title}</div>
+      <div style={{fontSize:14,color:C.txd,marginBottom:20}}>{confirmAction.text}</div>
+      <div style={{display:"flex",gap:10}}>
+        <Btn full color={C.txd} onClick={()=>setConfirmAction(null)}>Abbrechen</Btn>
+        <Btn full color={C.red} onClick={confirmAction.onOk}>Bestätigen</Btn>
+      </div>
+    </div>
+  </div>);}
   return null;
 }
