@@ -21,9 +21,16 @@ jobs:
       - run: npx cap add android
       - run: npx cap sync android
       - run: bash scripts/setup-android.sh
-      - name: ERRORS ONLY
+      - name: Show MainActivity AFTER injection
+        run: cat android/app/src/main/java/com/matchreport/app/MainActivity.java
+      - name: Build and show FAILURE reason
         working-directory: android
         run: |
-          ./gradlew assembleDebug --no-daemon 2>&1 | grep -iE "^e:|error:|Error |FAILED|cannot find|unresolved" | head -30
-          echo "---EXIT CODE---"
-          ./gradlew assembleDebug --no-daemon 2>&1 | tail -5
+          if ./gradlew assembleDebug --no-daemon 2>&1; then
+            echo "BUILD SUCCEEDED"
+            find . -name "*.apk" -type f
+          else
+            echo "========== BUILD FAILED =========="
+            echo "Last Gradle output:"
+            ./gradlew assembleDebug --no-daemon 2>&1 | grep -v "^$" | tail -30
+          fi
