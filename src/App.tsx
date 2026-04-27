@@ -21,10 +21,18 @@ function vibrate(){try{navigator.vibrate?.([300,100,300]);}catch(_){}}
 function playEventSound(eventType:string){
   try{
     const defaults:Record<string,string>={goal:'goal-fanfare',eigentor:'eigen-sad',elfmeter:'elf-drum',yellow:'card-short',red:'card-alarm',sub:'sub-bell',halftime:'ht-whistle',fulltime:'ft-triple'};
-    // Try to get custom sound config from DB
+    const isLoud=eventType==='halftime'||eventType==='fulltime';
     db.soundConfigs.get(eventType).then(cfg=>{
+      if(cfg?.uri==='silent')return; // Stumm
       if(cfg?.uri?.startsWith('preset:')){playPresetById(cfg.uri.replace('preset:',''));return;}
-      if(cfg?.uri){try{Ringtones.play({uri:cfg.uri});}catch(_){playPresetById(defaults[eventType]||'goal-fanfare');} return;}
+      if(cfg?.uri){
+        // Native sound — use playLoud for HZ/FT to bypass silent mode
+        if(isLoud){try{Ringtones.playLoud({uri:cfg.uri});}catch(_){playPresetById(defaults[eventType]||'ht-whistle');}}
+        else{try{Ringtones.play({uri:cfg.uri});}catch(_){playPresetById(defaults[eventType]||'goal-fanfare');}}
+        return;
+      }
+      // Default preset — for HZ/FT try playLoud with system default
+      if(isLoud){try{Ringtones.playLoud();}catch(_){}}
       playPresetById(defaults[eventType]||'goal-fanfare');
     }).catch(()=>{playPresetById(defaults[eventType]||'goal-fanfare');});
   }catch(_){playPresetById('goal-fanfare');}
@@ -126,6 +134,8 @@ export default function MatchReport(){
   const [scoreFlash,setScoreFlash]=useState("");
   const [confirmAction,setConfirmAction]=useState<{title:string,text:string,onOk:()=>void}|null>(null);
   const tmr=useRef<any>(null);
+  const runStartRef=useRef<number>(0);
+  const pausedElapsedRef=useRef<number>(0);
   const inp:any={width:"100%",boxSizing:"border-box",padding:"10px 14px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,fontSize:15,outline:"none"};
 
   // Init DB on mount
@@ -154,10 +164,31 @@ export default function MatchReport(){
 
   useEffect(()=>{if(started&&hOn.length===0){setHOn(hp.filter(p=>p.isStarter).map(p=>p.id));setAOn(ap.filter(p=>p.isStarter).map(p=>p.id));}},[started]);
 
+  // Timestamp-based timer: survives screen lock
   useEffect(()=>{
-    if(run&&!pau){tmr.current=setInterval(()=>{if(!isOt){setTl(p=>{if(!p||p<=1){setIsOt(true);if(!whistled){playEventSound(half===1?'halftime':'fulltime');vibrate();setWhistled(true);}return 0;}return p-1;});}else{setOtS(p=>p+1);}},1000);}
+    if(run&&!pau){
+      if(runStartRef.current===0) runStartRef.current=Date.now();
+      tmr.current=setInterval(()=>{
+        const elapsed=pausedElapsedRef.current+Math.floor((Date.now()-runStartRef.current)/1000);
+        const total=hd*60;
+        const remaining=total-elapsed;
+        if(!isOt){
+          if(remaining<=0){
+            setTl(0);setIsOt(true);
+            if(!whistled){playEventSound(half===1?'halftime':'fulltime');vibrate();setWhistled(true);}
+          } else { setTl(remaining); }
+        } else {
+          setTl(0);setOtS(elapsed-total);
+        }
+      },250);
+    }
+    if(pau&&run){
+      // Save elapsed when pausing
+      pausedElapsedRef.current+=Math.floor((Date.now()-runStartRef.current)/1000);
+      runStartRef.current=0;
+    }
     return()=>clearInterval(tmr.current);
-  },[run,pau,isOt,whistled,half]);
+  },[run,pau,isOt,whistled,half,hd]);
 
   const getDispMin=useCallback(()=>{
     const elapsed=hd*60-(tl||0);const m=Math.floor(elapsed/60)+(half===2?hd:0);
@@ -171,8 +202,8 @@ export default function MatchReport(){
   function applyCSV(t:string){const r=parseCSV(t);if(r){if(r.homeTeam)setHt(r.homeTeam);if(r.awayTeam)setAt(r.awayTeam);if(r.homePlayers.length)setHp(r.homePlayers);if(r.awayPlayers.length)setAp(r.awayPlayers);flash("ok");return true;}flash("err");return false;}
   function onFile(e:any){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>applyCSV(ev.target?.result as string);r.readAsText(f);e.target.value="";}
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
-  function startT(){if(tl===null)setTl(hd*60);setRun(true);setPau(false);setStarted(true);}
-  function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);setModal(null);}
+  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);}
+  function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);pausedElapsedRef.current=0;runStartRef.current=0;setModal(null);}
   function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);navTo("review");}
 
   function openAct(t:string,tm:string){setMT(tm);setMS(0);setMD({});setModal(t);}
@@ -251,7 +282,8 @@ export default function MatchReport(){
     ];
 
     async function selectPreset(evId:string,presetId:string){
-      await db.soundConfigs.update(evId,{uri:`preset:${presetId}`});
+      const uri=presetId.startsWith('silent')?'silent':`preset:${presetId}`;
+      await db.soundConfigs.update(evId,{uri});
       await loadSounds();flash("ok");
     }
     async function tryNative(evId:string){
@@ -274,6 +306,7 @@ export default function MatchReport(){
     function getSndName(evId:string):string{
       const cfg=soundCfgs.find(s=>s.id===evId);
       if(!cfg?.uri)return"Standard";
+      if(cfg.uri==="silent")return"🔇 Stumm";
       if(cfg.uri.startsWith('preset:')){const p=PRESETS.find(x=>x.id===cfg.uri!.replace('preset:',''));return p?p.name:"Preset";}
       return"Geräte-Sound";
     }
@@ -522,7 +555,7 @@ export default function MatchReport(){
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:4}}>
           {!run&&!pau&&<Btn color={C.grn} onClick={startT}><Play size={18}/> Start</Btn>}
           {run&&!pau&&<div style={{display:"flex",gap:12}}><Btn color={C.yel} onClick={()=>setPau(true)}><Pause size={18}/> Pause</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
-          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>setPau(false)}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
+          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
         </div>
       </div>
 

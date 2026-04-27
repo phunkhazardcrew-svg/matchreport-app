@@ -55,6 +55,41 @@ class RingtonePlugin : Plugin() {
     }
 
     @PluginMethod
+    fun playLoud(call: PluginCall) {
+        val uri = call.getString("uri")
+        try {
+            val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
+            // Use STREAM_ALARM to bypass silent mode
+            val oldVol = am.getStreamVolume(android.media.AudioManager.STREAM_ALARM)
+            val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_ALARM)
+            am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, maxVol, 0)
+            
+            if (uri != null) {
+                val ringtone = android.media.RingtoneManager.getRingtone(context, android.net.Uri.parse(uri))
+                ringtone?.streamType = android.media.AudioManager.STREAM_ALARM
+                ringtone?.play()
+                // Restore volume after 3 seconds
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, oldVol, 0)
+                }, 3000)
+            } else {
+                // Play default alarm sound
+                val defaultUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
+                val ringtone = android.media.RingtoneManager.getRingtone(context, defaultUri)
+                ringtone?.streamType = android.media.AudioManager.STREAM_ALARM
+                ringtone?.play()
+                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                    ringtone?.stop()
+                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, oldVol, 0)
+                }, 2000)
+            }
+            call.resolve()
+        } catch (e: Exception) {
+            call.reject("playLoud failed: " + e.message)
+        }
+    }
+
+    @PluginMethod
     fun getDefault(call: PluginCall) {
         val type = typeFlag(call.getString("type", "notification") ?: "notification")
         val uri = RingtoneManager.getActualDefaultRingtoneUri(context, type)
