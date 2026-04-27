@@ -197,15 +197,31 @@ export default function MatchReport(){
   const bnch=(tm:string)=>(tm==="home"?hp:ap).filter(p=>!(tm==="home"?hOn:aOn).includes(p.id));
   const allP=(tm:string)=>tm==="home"?hp:ap;
 
+
+  /* ═══ CONFIRM OVERLAY (renders on top of any screen) ═══ */
+  const confirmOverlay = confirmAction ? (
+    <div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={()=>setConfirmAction(null)}>
+      <div onClick={(e:any)=>e.stopPropagation()} style={{background:C.card,borderRadius:16,padding:24,width:"100%",maxWidth:340,border:`1px solid ${C.bdr}`}}>
+        <div style={{fontSize:18,fontWeight:700,color:C.tx,marginBottom:8}}>{confirmAction.title}</div>
+        <div style={{fontSize:14,color:C.txd,marginBottom:20}}>{confirmAction.text}</div>
+        <div style={{display:"flex",gap:10}}>
+          <Btn full color={C.txd} onClick={()=>setConfirmAction(null)}>Abbrechen</Btn>
+          <Btn full color={C.red} onClick={confirmAction.onOk}>Bestätigen</Btn>
+        </div>
+      </div>
+    </div>
+  ) : null;
+
   /* ═══ HOME ═══ */
   if(screen==="home"){
     const hasActive=started&&!evts.some(e=>e.type==="info"&&e.half===2);
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"24px 16px",display:"flex",flexDirection:"column",alignItems:"center"}}>
-        <div style={{fontSize:36,fontWeight:800,color:C.grn,marginTop:40,marginBottom:4}}>⚽</div>
+      {confirmOverlay}
+      <div style={{padding:"24px clamp(12px, 4vw, 20px)",display:"flex",flexDirection:"column",alignItems:"center"}}>
+        <div style={{fontSize:36,fontWeight:800,color:C.grn,marginTop:"clamp(20px, 6vh, 50px)",marginBottom:4}}>⚽</div>
         <div style={{fontSize:28,fontWeight:800,color:C.grn,marginBottom:4}}>Matchreport</div>
-        <div style={{color:C.txd,fontSize:13,marginBottom:40}}>Fußball-Spielbericht</div>
+        <div style={{color:C.txd,fontSize:13,marginBottom:"clamp(20px, 5vh, 40px)"}}>Fußball-Spielbericht</div>
 
         <div style={{width:"100%",maxWidth:340,display:"flex",flexDirection:"column",gap:12}}>
           {hasActive&&<Btn full color={C.org} onClick={()=>navTo("game")}><Play size={18}/> Laufendes Spiel fortsetzen</Btn>}
@@ -218,7 +234,7 @@ export default function MatchReport(){
           <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
-        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 2.0 • Offline-fähig</div>
+        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 2.7 • Offline-fähig</div>
       </div>
     </div>);
   }
@@ -264,7 +280,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"20px 16px 150px"}}>
+      <div style={{padding:"20px clamp(12px, 4vw, 20px) 150px"}}>
         <NavBar title="Sound-Einstellungen" onBack={goHome}/>
         <div style={{fontSize:13,color:C.txd,marginBottom:16}}>Tippe auf ein Ereignis um den Sound zu ändern.</div>
 
@@ -327,7 +343,7 @@ export default function MatchReport(){
       const hz1=m.events.filter(e=>e.half===1&&e.type!=="info"),hz2=m.events.filter(e=>e.half===2&&e.type!=="info");
       return(
       <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-        <div style={{padding:"20px 16px 150px"}}>
+        <div style={{padding:"20px clamp(12px, 4vw, 20px) 150px"}}>
           <NavBar title="Archiv" onBack={()=>setViewMatch(null)}/>
           <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
             <div style={{fontSize:12,color:C.txd,marginBottom:8}}>{new Date(m.createdAt).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})}</div>
@@ -360,7 +376,8 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"20px 16px 150px"}}>
+      {confirmOverlay}
+      <div style={{padding:"20px clamp(12px, 4vw, 20px) 150px"}}>
         <NavBar title="Spielarchiv"/>
         {archivedMatches.length===0?<div style={{textAlign:"center",color:C.txd,padding:40}}>Noch keine archivierten Spiele</div>:
           archivedMatches.map(m=>{
@@ -408,7 +425,7 @@ export default function MatchReport(){
   /* ═══ SETTINGS ═══ */
   if(screen==="settings"){return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"20px 16px 150px"}}>
+      <div style={{padding:"20px clamp(12px, 4vw, 20px) 150px"}}>
         <NavBar title="Spieleinstellungen"/>
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
@@ -494,7 +511,7 @@ export default function MatchReport(){
 
   /* ═══ GAME ═══ */
   if(screen==="game"){return(
-    <div style={{background:C.bg,height:"100dvh",color:C.tx,fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+    <div style={{background:C.bg,height:"100dvh",minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{flex:"0 0 auto",padding:"12px 16px",textAlign:"center",background:`linear-gradient(180deg,${C.card} 0%,${C.bg} 100%)`,borderBottom:`1px solid ${C.bdr}`}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
           <button onClick={()=>navTo("settings")} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",fontSize:12,display:"flex",alignItems:"center",gap:4}}><SettingsIcon size={15}/> Einstellungen</button>
@@ -590,7 +607,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"20px 16px 150px"}}>
+      <div style={{padding:"20px clamp(12px, 4vw, 20px) 150px"}}>
         <NavBar title="Korrektur & Bearbeitung" onBack={()=>navTo("game")}/>
 
         {/* Editable Score + Teams */}
@@ -696,7 +713,7 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"20px 16px 150px"}}>
+      <div style={{padding:"20px clamp(12px, 4vw, 20px) 150px"}}>
         <NavBar title="Spielbericht" onBack={()=>navTo("review")}/>
 
         <div style={{background:C.card,borderRadius:16,padding:20,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
@@ -736,16 +753,5 @@ export default function MatchReport(){
       </div>
     </div>);
   }
-  /* ═══ GLOBAL CONFIRM MODAL ═══ */
-  if(confirmAction){return(<div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(0,0,0,0.85)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-    <div style={{background:C.card,borderRadius:16,padding:24,width:"100%",maxWidth:340,border:`1px solid ${C.bdr}`}}>
-      <div style={{fontSize:18,fontWeight:700,color:C.tx,marginBottom:8}}>{confirmAction.title}</div>
-      <div style={{fontSize:14,color:C.txd,marginBottom:20}}>{confirmAction.text}</div>
-      <div style={{display:"flex",gap:10}}>
-        <Btn full color={C.txd} onClick={()=>setConfirmAction(null)}>Abbrechen</Btn>
-        <Btn full color={C.red} onClick={confirmAction.onOk}>Bestätigen</Btn>
-      </div>
-    </div>
-  </div>);}
   return null;
 }
