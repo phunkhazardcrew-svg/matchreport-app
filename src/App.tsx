@@ -123,6 +123,7 @@ export default function MatchReport(){
   const [expandCat,setExpandCat]=useState<string|null>(null);
   const [addMin,setAddMin]=useState("");
   const [addHalf2,setAddHalf2]=useState(1);
+  const [editEvt,setEditEvt]=useState<any>(null);
   const tmr=useRef<any>(null);
   const inp:any={width:"100%",boxSizing:"border-box",padding:"10px 14px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,fontSize:15,outline:"none"};
 
@@ -487,87 +488,106 @@ export default function MatchReport(){
   );}
 
   /* ═══ REVIEW ═══ */
+
+  /* ═══ REVIEW — voller Editier-Zugriff ═══ */
   if(screen==="review"){
     const hz1r=evts.filter(e=>e.half===1&&e.type!=="info"),hz2r=evts.filter(e=>e.half===2&&e.type!=="info");
     const o1r=evts.find(e=>e.half===1&&e.type==="info"),o2r=evts.find(e=>e.half===2&&e.type==="info");
 
-    // Manual add functions for review
     function revGoal(team:string,goalType:string,player:any){
-      const min=addMin||"0";const h=addHalf2;
       const own=goalType==="Eigentor";
       if(own){if(team==="home")setAS(s=>s+1);else setHS(s=>s+1);}
       else{if(team==="home")setHS(s=>s+1);else setAS(s=>s+1);}
-      setEvts(x=>[...x,{type:"goal",goalType,half:h,player,team,id:`rg-${Date.now()}`,displayTime:`${min}'`}]);
+      setEvts(x=>[...x,{type:"goal",goalType,half:addHalf2,player,team,id:`rg-${Date.now()}`,displayTime:`${addMin||"0"}'`}]);
       setModal(null);setAddMin("");
     }
     function revCard(team:string,cardType:string,player:any){
-      const min=addMin||"0";const h=addHalf2;
-      setEvts(x=>[...x,{type:"card",cardType,half:h,player,team,id:`rc-${Date.now()}`,displayTime:`${min}'`}]);
+      setEvts(x=>[...x,{type:"card",cardType,half:addHalf2,player,team,id:`rc-${Date.now()}`,displayTime:`${addMin||"0"}'`}]);
       setModal(null);setAddMin("");
     }
     function revSub(team:string,outP:any,inP:any){
-      const min=addMin||"0";const h=addHalf2;
-      setEvts(x=>[...x,{type:"sub",half:h,outPlayer:outP,inPlayer:inP,team,id:`rs-${Date.now()}`,displayTime:`${min}'`}]);
+      setEvts(x=>[...x,{type:"sub",half:addHalf2,outPlayer:outP,inPlayer:inP,team,id:`rs-${Date.now()}`,displayTime:`${addMin||"0"}'`}]);
       setModal(null);setAddMin("");
     }
+    function saveEdit(){
+      if(!editEvt)return;
+      setEvts(x=>x.map(e=>e.id===editEvt.id?{...editEvt}:e));
+      let hs=0,as=0;
+      evts.map(e=>e.id===editEvt.id?{...editEvt}:e).filter(e=>e.type==="goal").forEach(e=>{
+        if(e.goalType==="Eigentor"){if(e.team==="home")as++;else hs++;}
+        else{if(e.team==="home")hs++;else as++;}
+      });
+      setHS(hs);setAS(as);
+      setEditEvt(null);setModal(null);
+    }
 
-    const evRowR=(ev:any)=>(<div key={ev.id} style={{fontSize:13,padding:"8px 0",display:"flex",gap:8,alignItems:"center",borderBottom:`1px solid ${C.bdr}40`}}>
-      <span style={{color:ev.half===1?C.grn:C.blu,fontFamily:"'JetBrains Mono',monospace",fontSize:13,fontWeight:700,minWidth:44}}>{ev.displayTime}</span>
-      <span style={{flex:1}}>{ev.type==="goal"&&<span>⚽ {ev.goalType!=="Tor"&&<span style={{color:C.yel}}>({ev.goalType}) </span>}{ev.player?.number} {ev.player?.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":ev.cardType==="Rot"?"🟥":"⏱️"} {ev.player?.number} {ev.player?.name}</span>}{ev.type==="sub"&&<span>🔄 {ev.outPlayer?.number} → {ev.inPlayer?.number} {ev.inPlayer?.name}</span>}<span style={{color:C.txd}}> — {ev.team==="home"?ht:at}</span></span>
-      <button onClick={()=>delEv(ev)} style={{background:C.red,border:"none",color:"#fff",cursor:"pointer",padding:"6px 10px",borderRadius:8,fontSize:11,fontWeight:600,flexShrink:0}}>X</button>
+    const evRow=(ev:any)=>(<div key={ev.id} style={{fontSize:12,padding:"8px 0",display:"flex",gap:5,alignItems:"center",borderBottom:`1px solid ${C.bdr}40`}}>
+      <span style={{color:ev.half===1?C.grn:C.blu,fontFamily:"'JetBrains Mono',monospace",fontWeight:700,minWidth:36,fontSize:12}}>{ev.displayTime}</span>
+      <span style={{flex:1,fontSize:12}}>{ev.type==="goal"&&<span>⚽{ev.goalType!=="Tor"?`(${ev.goalType})`:""} {ev.player?.number} {ev.player?.name}</span>}{ev.type==="card"&&<span>{ev.cardType==="Gelb"?"🟨":"🟥"} {ev.player?.number} {ev.player?.name}</span>}{ev.type==="sub"&&<span>🔄{ev.outPlayer?.number}→{ev.inPlayer?.number}</span>} <span style={{color:C.txd}}>{ev.team==="home"?ht:at}</span></span>
+      <button onClick={()=>{setEditEvt({...ev});setModal("edit");}} style={{background:C.blu,border:"none",color:"#fff",cursor:"pointer",padding:"5px 8px",borderRadius:6,fontSize:11,flexShrink:0}}>✏️</button>
+      <button onClick={()=>delEv(ev)} style={{background:C.red,border:"none",color:"#fff",cursor:"pointer",padding:"5px 8px",borderRadius:6,fontSize:11,flexShrink:0}}>✕</button>
     </div>);
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
       <div style={{padding:"16px 16px 120px"}}>
-        <NavBar title="Korrektur" onBack={()=>setScreen("game")}/>
+        <NavBar title="Korrektur & Bearbeitung" onBack={()=>setScreen("game")}/>
 
-        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20}}>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:C.txd}}>{ht}</div><div style={{fontSize:40,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{hS}</div></div>
-            <div style={{fontSize:24,color:C.txd}}>:</div>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:700,color:C.txd}}>{at}</div><div style={{fontSize:40,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{aS}</div></div>
-          </div>
-          {htH!==null&&<div style={{fontSize:13,color:C.txd,marginTop:4}}>HZ: {htH}:{htA}</div>}
-        </div>
-
-        {/* ADD ACTION */}
-        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.grn}40`}}>
-          <div style={{fontSize:15,fontWeight:700,color:C.grn,marginBottom:12}}><Plus size={16} style={{verticalAlign:"middle",marginRight:6}}/>Aktion hinzufügen</div>
-          <div style={{display:"flex",gap:8,marginBottom:10}}>
-            <div style={{flex:1}}>
-              <label style={{fontSize:11,color:C.txd,display:"block",marginBottom:4}}>Minute</label>
-              <input value={addMin} onChange={(e:any)=>setAddMin(e.target.value)} type="number" placeholder="z.B. 12" style={{...inp,textAlign:"center",fontSize:16,padding:"8px"}}/>
+        {/* Editable Score + Teams */}
+        <div style={{background:C.card,borderRadius:14,padding:14,marginBottom:14,border:`1px solid ${C.bdr}`}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:10}}>
+            <div style={{flex:1,textAlign:"center"}}>
+              <input value={ht} onChange={(e:any)=>setHt(e.target.value)} style={{background:"transparent",border:`1px solid ${C.bdr}`,borderRadius:6,color:C.tx,fontSize:12,fontWeight:700,textAlign:"center",width:"100%",padding:"4px",outline:"none"}}/>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:6}}>
+                <button onClick={()=>setHS(s=>Math.max(0,s-1))} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,width:28,height:28,color:C.tx,cursor:"pointer",fontSize:14}}>-</button>
+                <span style={{fontSize:32,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{hS}</span>
+                <button onClick={()=>setHS(s=>s+1)} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,width:28,height:28,color:C.tx,cursor:"pointer",fontSize:14}}>+</button>
+              </div>
             </div>
-            <div style={{flex:1}}>
-              <label style={{fontSize:11,color:C.txd,display:"block",marginBottom:4}}>Halbzeit</label>
-              <div style={{display:"flex",gap:4}}>
-                <button onClick={()=>setAddHalf2(1)} style={{flex:1,padding:8,borderRadius:8,background:addHalf2===1?C.grn:C.card2,color:"#fff",border:`1px solid ${addHalf2===1?C.grn:C.bdr}`,fontWeight:600,fontSize:13,cursor:"pointer"}}>1. HZ</button>
-                <button onClick={()=>setAddHalf2(2)} style={{flex:1,padding:8,borderRadius:8,background:addHalf2===2?C.blu:C.card2,color:"#fff",border:`1px solid ${addHalf2===2?C.blu:C.bdr}`,fontWeight:600,fontSize:13,cursor:"pointer"}}>2. HZ</button>
+            <span style={{fontSize:22,color:C.txd}}>:</span>
+            <div style={{flex:1,textAlign:"center"}}>
+              <input value={at} onChange={(e:any)=>setAt(e.target.value)} style={{background:"transparent",border:`1px solid ${C.bdr}`,borderRadius:6,color:C.tx,fontSize:12,fontWeight:700,textAlign:"center",width:"100%",padding:"4px",outline:"none"}}/>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:6}}>
+                <button onClick={()=>setAS(s=>Math.max(0,s-1))} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,width:28,height:28,color:C.tx,cursor:"pointer",fontSize:14}}>-</button>
+                <span style={{fontSize:32,fontWeight:900,fontFamily:"'JetBrains Mono',monospace"}}>{aS}</span>
+                <button onClick={()=>setAS(s=>s+1)} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,width:28,height:28,color:C.tx,cursor:"pointer",fontSize:14}}>+</button>
               </div>
             </div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
-            <Btn small color={C.grn} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-goal");}}><CircleDot size={14}/> Tor {ht||"Heim"}</Btn>
-            <Btn small color={C.grn} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-goal");}}><CircleDot size={14}/> Tor {at||"Gast"}</Btn>
-            <Btn small color={C.yel} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-card");}}><RectangleHorizontal size={14}/> Karte {ht||"Heim"}</Btn>
-            <Btn small color={C.yel} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-card");}}><RectangleHorizontal size={14}/> Karte {at||"Gast"}</Btn>
-            <Btn small color={C.blu} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-sub");}}><ArrowLeftRight size={14}/> Wechsel {ht||"H"}</Btn>
-            <Btn small color={C.blu} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-sub");}}><ArrowLeftRight size={14}/> Wechsel {at||"G"}</Btn>
+          {htH!==null&&<div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginTop:8,fontSize:12,color:C.txd}}>
+            HZ: <button onClick={()=>setHtH(s=>Math.max(0,(s??0)-1))} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:4,width:22,height:22,color:C.tx,cursor:"pointer",fontSize:11}}>-</button><span style={{fontWeight:700}}>{htH}</span><button onClick={()=>setHtH(s=>(s??0)+1)} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:4,width:22,height:22,color:C.tx,cursor:"pointer",fontSize:11}}>+</button>
+            :<button onClick={()=>setHtA(s=>Math.max(0,(s??0)-1))} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:4,width:22,height:22,color:C.tx,cursor:"pointer",fontSize:11}}>-</button><span style={{fontWeight:700}}>{htA}</span><button onClick={()=>setHtA(s=>(s??0)+1)} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:4,width:22,height:22,color:C.tx,cursor:"pointer",fontSize:11}}>+</button>
+          </div>}
+        </div>
+
+        {/* Add new */}
+        <div style={{background:C.card,borderRadius:14,padding:14,marginBottom:14,border:`1px solid ${C.grn}40`}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.grn,marginBottom:8}}><Plus size={14} style={{verticalAlign:"middle",marginRight:4}}/>Hinzufügen</div>
+          <div style={{display:"flex",gap:6,marginBottom:8}}>
+            <div style={{flex:1}}><label style={{fontSize:10,color:C.txd}}>Min.</label><input value={addMin} onChange={(e:any)=>setAddMin(e.target.value)} type="number" placeholder="12" style={{...inp,textAlign:"center",fontSize:15,padding:"5px"}}/></div>
+            <div style={{flex:1}}><label style={{fontSize:10,color:C.txd}}>HZ</label><div style={{display:"flex",gap:3,marginTop:2}}><button onClick={()=>setAddHalf2(1)} style={{flex:1,padding:5,borderRadius:6,background:addHalf2===1?C.grn:C.card2,color:"#fff",border:`1px solid ${addHalf2===1?C.grn:C.bdr}`,fontWeight:600,fontSize:11,cursor:"pointer"}}>1.HZ</button><button onClick={()=>setAddHalf2(2)} style={{flex:1,padding:5,borderRadius:6,background:addHalf2===2?C.blu:C.card2,color:"#fff",border:`1px solid ${addHalf2===2?C.blu:C.bdr}`,fontWeight:600,fontSize:11,cursor:"pointer"}}>2.HZ</button></div></div>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+            <Btn small color={C.grn} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-goal");}}><CircleDot size={12}/> Tor {ht||"H"}</Btn>
+            <Btn small color={C.grn} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-goal");}}><CircleDot size={12}/> Tor {at||"G"}</Btn>
+            <Btn small color={C.yel} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-card");}}><RectangleHorizontal size={12}/> Karte {ht||"H"}</Btn>
+            <Btn small color={C.yel} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-card");}}><RectangleHorizontal size={12}/> Karte {at||"G"}</Btn>
+            <Btn small color={C.blu} onClick={()=>{setMT("home");setMS(0);setMD({});setModal("rev-sub");}}><ArrowLeftRight size={12}/> Wechsel {ht||"H"}</Btn>
+            <Btn small color={C.blu} onClick={()=>{setMT("away");setMS(0);setMD({});setModal("rev-sub");}}><ArrowLeftRight size={12}/> Wechsel {at||"G"}</Btn>
           </div>
         </div>
 
-        {/* EVENT LIST */}
-        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
-          <div style={{fontSize:15,fontWeight:700,marginBottom:12}}>Ereignisse ({hz1r.length+hz2r.length})</div>
-          {hz1r.length>0&&<div style={{marginBottom:14}}><div style={{fontSize:12,fontWeight:700,color:C.grn,marginBottom:6,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>1. Halbzeit{o1r&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o1r.text}</span>}</div>{hz1r.map(evRowR)}</div>}
-          {hz2r.length>0&&<div><div style={{fontSize:12,fontWeight:700,color:C.blu,marginBottom:6,borderBottom:`1px solid ${C.bdr}`,paddingBottom:4}}>2. Halbzeit{o2r&&<span style={{fontWeight:400,color:C.txd,marginLeft:8}}>{o2r.text}</span>}</div>{hz2r.map(evRowR)}</div>}
-          {hz1r.length===0&&hz2r.length===0&&<div style={{textAlign:"center",color:C.txd,padding:16}}>Keine Ereignisse</div>}
+        {/* Events: ✏️ edit + ✕ delete */}
+        <div style={{background:C.card,borderRadius:14,padding:14,marginBottom:14,border:`1px solid ${C.bdr}`}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:8}}>Ereignisse ({hz1r.length+hz2r.length}) <span style={{fontSize:10,fontWeight:400,color:C.txd}}>✏️ bearbeiten ✕ löschen</span></div>
+          {hz1r.length>0&&<div style={{marginBottom:10}}><div style={{fontSize:11,fontWeight:700,color:C.grn,marginBottom:4,borderBottom:`1px solid ${C.bdr}`,paddingBottom:3}}>1. HZ{o1r&&<span style={{fontWeight:400,color:C.txd,marginLeft:6}}>{o1r.text}</span>}</div>{hz1r.map(evRow)}</div>}
+          {hz2r.length>0&&<div><div style={{fontSize:11,fontWeight:700,color:C.blu,marginBottom:4,borderBottom:`1px solid ${C.bdr}`,paddingBottom:3}}>2. HZ{o2r&&<span style={{fontWeight:400,color:C.txd,marginLeft:6}}>{o2r.text}</span>}</div>{hz2r.map(evRow)}</div>}
+          {hz1r.length===0&&hz2r.length===0&&<div style={{textAlign:"center",color:C.txd,padding:14,fontSize:13}}>Keine Ereignisse</div>}
         </div>
 
-        <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`}}>
-          <div style={{fontSize:15,fontWeight:700,marginBottom:8}}>Bemerkungen</div>
-          <textarea value={notes} onChange={(e:any)=>setNotes(e.target.value)} placeholder="Besondere Vorkommnisse..." style={{...inp,minHeight:90,resize:"vertical",fontSize:14}}/>
+        <div style={{background:C.card,borderRadius:14,padding:14,marginBottom:14,border:`1px solid ${C.bdr}`}}>
+          <div style={{fontSize:13,fontWeight:700,marginBottom:6}}>Bemerkungen</div>
+          <textarea value={notes} onChange={(e:any)=>setNotes(e.target.value)} placeholder="Besondere Vorkommnisse..." style={{...inp,minHeight:80,resize:"vertical",fontSize:13}}/>
         </div>
 
         <Btn full color={C.grn} onClick={()=>setScreen("report")}><Save size={18}/> Alles korrekt — Spielbericht</Btn>
@@ -575,38 +595,32 @@ export default function MatchReport(){
 
       <BottomBar onHome={goHome} screen={screen}/>
 
-      {/* Review Modals */}
-      {modal==="rev-goal"&&<Modal title={`Tor — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
-        {mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <Btn full color={C.grn} onClick={()=>{setMD({gt:"Tor"});setMS(1);}}>⚽ Tor</Btn>
-          <Btn full color={C.yel} onClick={()=>{setMD({gt:"Elfmeter"});setMS(1);}}>⚽ Elfmeter</Btn>
-          <Btn full color={C.red} onClick={()=>{setMD({gt:"Eigentor"});setMS(1);}}>⚽ Eigentor</Btn>
-        </div>:<div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Torschütze ({mD.gt})</div>
-          {allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revGoal(mT!,mD.gt,pl)}/>)}
+      {/* ── EDIT MODAL: jedes Feld änderbar ── */}
+      {modal==="edit"&&editEvt&&<Modal title="Ereignis bearbeiten" onClose={()=>{setEditEvt(null);setModal(null);}}>
+        <div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Spielminute</label><input value={editEvt.displayTime?.replace("'","")||""} onChange={(e:any)=>setEditEvt({...editEvt,displayTime:`${e.target.value}'`})} type="number" style={{...inp,textAlign:"center",fontSize:18,marginTop:4}}/></div>
+        <div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Halbzeit</label><div style={{display:"flex",gap:6,marginTop:4}}><button onClick={()=>setEditEvt({...editEvt,half:1})} style={{flex:1,padding:8,borderRadius:8,background:editEvt.half===1?C.grn:C.card2,color:"#fff",border:`1px solid ${editEvt.half===1?C.grn:C.bdr}`,fontWeight:600,cursor:"pointer"}}>1. HZ</button><button onClick={()=>setEditEvt({...editEvt,half:2})} style={{flex:1,padding:8,borderRadius:8,background:editEvt.half===2?C.blu:C.card2,color:"#fff",border:`1px solid ${editEvt.half===2?C.blu:C.bdr}`,fontWeight:600,cursor:"pointer"}}>2. HZ</button></div></div>
+        <div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Mannschaft</label><div style={{display:"flex",gap:6,marginTop:4}}><button onClick={()=>setEditEvt({...editEvt,team:"home"})} style={{flex:1,padding:8,borderRadius:8,background:editEvt.team==="home"?C.grn:C.card2,color:"#fff",border:`1px solid ${editEvt.team==="home"?C.grn:C.bdr}`,fontWeight:600,cursor:"pointer"}}>{ht}</button><button onClick={()=>setEditEvt({...editEvt,team:"away"})} style={{flex:1,padding:8,borderRadius:8,background:editEvt.team==="away"?C.blu:C.card2,color:"#fff",border:`1px solid ${editEvt.team==="away"?C.blu:C.bdr}`,fontWeight:600,cursor:"pointer"}}>{at}</button></div></div>
+        <div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Typ</label><div style={{display:"flex",gap:4,marginTop:4}}>{[{t:"goal",l:"⚽Tor",c:C.grn},{t:"card",l:"🟨Karte",c:C.yel},{t:"sub",l:"🔄Wechsel",c:C.blu}].map(({t,l,c})=>(<button key={t} onClick={()=>setEditEvt({...editEvt,type:t})} style={{flex:1,padding:6,borderRadius:6,background:editEvt.type===t?c:C.card2,color:"#fff",border:`1px solid ${editEvt.type===t?c:C.bdr}`,fontWeight:600,fontSize:11,cursor:"pointer"}}>{l}</button>))}</div></div>
+
+        {editEvt.type==="goal"&&<div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Torart</label><div style={{display:"flex",gap:4,marginTop:4}}>{["Tor","Elfmeter","Eigentor"].map(g=>(<button key={g} onClick={()=>setEditEvt({...editEvt,goalType:g})} style={{flex:1,padding:6,borderRadius:6,background:editEvt.goalType===g?C.grn:C.card2,color:"#fff",border:`1px solid ${editEvt.goalType===g?C.grn:C.bdr}`,fontWeight:600,fontSize:11,cursor:"pointer"}}>{g}</button>))}</div></div>}
+        {editEvt.type==="card"&&<div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Kartentyp</label><div style={{display:"flex",gap:4,marginTop:4}}>{["Gelb","Rot","Zeitstrafe"].map(c=>(<button key={c} onClick={()=>setEditEvt({...editEvt,cardType:c})} style={{flex:1,padding:6,borderRadius:6,background:editEvt.cardType===c?C.yel:C.card2,color:"#fff",border:`1px solid ${editEvt.cardType===c?C.yel:C.bdr}`,fontWeight:600,fontSize:11,cursor:"pointer"}}>{c}</button>))}</div></div>}
+
+        {(editEvt.type==="goal"||editEvt.type==="card")&&<div style={{marginBottom:10}}><label style={{fontSize:11,color:C.txd}}>Spieler: <b style={{color:C.grn}}>{editEvt.player?.number} {editEvt.player?.name||"?"}</b></label><div style={{maxHeight:140,overflowY:"auto",marginTop:4}}>{allP(editEvt.team||"home").map(p=>(<button key={p.id} onClick={()=>setEditEvt({...editEvt,player:p})} style={{display:"block",width:"100%",padding:"7px 10px",background:editEvt.player?.id===p.id?`${C.grn}30`:C.card2,border:`1px solid ${editEvt.player?.id===p.id?C.grn:C.bdr}`,borderRadius:6,color:C.tx,cursor:"pointer",textAlign:"left",fontSize:12,marginBottom:3}}><b>{p.number}</b> {p.name}</button>))}</div></div>}
+
+        {editEvt.type==="sub"&&<div style={{marginBottom:10}}>
+          <label style={{fontSize:11,color:C.txd}}>Raus: <b style={{color:C.red}}>{editEvt.outPlayer?.number} {editEvt.outPlayer?.name||"?"}</b></label>
+          <div style={{maxHeight:120,overflowY:"auto",marginTop:4}}>{allP(editEvt.team||"home").map(p=>(<button key={p.id} onClick={()=>setEditEvt({...editEvt,outPlayer:p})} style={{display:"block",width:"100%",padding:"6px 10px",background:editEvt.outPlayer?.id===p.id?`${C.red}30`:C.card2,border:`1px solid ${editEvt.outPlayer?.id===p.id?C.red:C.bdr}`,borderRadius:6,color:C.tx,cursor:"pointer",textAlign:"left",fontSize:12,marginBottom:2}}><b>{p.number}</b> {p.name}</button>))}</div>
+          <label style={{fontSize:11,color:C.txd,marginTop:8,display:"block"}}>Rein: <b style={{color:C.grn}}>{editEvt.inPlayer?.number} {editEvt.inPlayer?.name||"?"}</b></label>
+          <div style={{maxHeight:120,overflowY:"auto",marginTop:4}}>{allP(editEvt.team||"home").map(p=>(<button key={p.id} onClick={()=>setEditEvt({...editEvt,inPlayer:p})} style={{display:"block",width:"100%",padding:"6px 10px",background:editEvt.inPlayer?.id===p.id?`${C.grn}30`:C.card2,border:`1px solid ${editEvt.inPlayer?.id===p.id?C.grn:C.bdr}`,borderRadius:6,color:C.tx,cursor:"pointer",textAlign:"left",fontSize:12,marginBottom:2}}><b>{p.number}</b> {p.name}</button>))}</div>
         </div>}
+
+        <div style={{display:"flex",gap:8,marginTop:12}}><Btn full color={C.txd} onClick={()=>{setEditEvt(null);setModal(null);}}>Abbrechen</Btn><Btn full color={C.grn} onClick={saveEdit}><Save size={15}/> Speichern</Btn></div>
       </Modal>}
 
-      {modal==="rev-card"&&<Modal title={`Karte — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
-        {mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}>
-          <Btn full color={C.yel} onClick={()=>{setMD({ct:"Gelb"});setMS(1);}}>🟨 Gelb</Btn>
-          <Btn full color={C.red} onClick={()=>{setMD({ct:"Rot"});setMS(1);}}>🟥 Rot</Btn>
-          <Btn full color={C.org} onClick={()=>{setMD({ct:"Zeitstrafe"});setMS(1);}}>⏱️ Zeitstrafe</Btn>
-        </div>:<div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler ({mD.ct})</div>
-          {allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revCard(mT!,mD.ct,pl)}/>)}
-        </div>}
-      </Modal>}
-
-      {modal==="rev-sub"&&<Modal title={`Wechsel — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
-        {mS===0?<div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler raus</div>
-          {allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>{setMD({out:pl});setMS(1);}}/>)}
-        </div>:<div style={{display:"flex",flexDirection:"column",gap:4}}>
-          <div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler rein (für #{mD.out?.number})</div>
-          {allP(mT!).filter(p=>p.id!==mD.out?.id).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revSub(mT!,mD.out,pl)}/>)}
-        </div>}
-      </Modal>}
+      {/* Add modals */}
+      {modal==="rev-goal"&&<Modal title={`Tor — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>{mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}><Btn full color={C.grn} onClick={()=>{setMD({gt:"Tor"});setMS(1);}}>⚽ Tor</Btn><Btn full color={C.yel} onClick={()=>{setMD({gt:"Elfmeter"});setMS(1);}}>⚽ Elfmeter</Btn><Btn full color={C.red} onClick={()=>{setMD({gt:"Eigentor"});setMS(1);}}>⚽ Eigentor</Btn></div>:<div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{color:C.txd,fontSize:13,marginBottom:4}}>Torschütze ({mD.gt})</div>{allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revGoal(mT!,mD.gt,pl)}/>)}</div>}</Modal>}
+      {modal==="rev-card"&&<Modal title={`Karte — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>{mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}><Btn full color={C.yel} onClick={()=>{setMD({ct:"Gelb"});setMS(1);}}>🟨 Gelb</Btn><Btn full color={C.red} onClick={()=>{setMD({ct:"Rot"});setMS(1);}}>🟥 Rot</Btn><Btn full color={C.org} onClick={()=>{setMD({ct:"Zeitstrafe"});setMS(1);}}>⏱️ Zeitstrafe</Btn></div>:<div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{color:C.txd,fontSize:13,marginBottom:4}}>Spieler ({mD.ct})</div>{allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revCard(mT!,mD.ct,pl)}/>)}</div>}</Modal>}
+      {modal==="rev-sub"&&<Modal title={`Wechsel — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>{mS===0?<div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{color:C.txd,fontSize:13}}>Spieler raus</div>{allP(mT!).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>{setMD({out:pl});setMS(1);}}/>)}</div>:<div style={{display:"flex",flexDirection:"column",gap:4}}><div style={{color:C.txd,fontSize:13}}>Rein für #{mD.out?.number}</div>{allP(mT!).filter(p=>p.id!==mD.out?.id).map(p=><PBtn key={p.id} p={p} onClick={(pl:any)=>revSub(mT!,mD.out,pl)}/>)}</div>}</Modal>}
     </div>);
   }
 
