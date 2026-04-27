@@ -1,0 +1,44 @@
+name: DEBUG Kotlin Plugin
+
+on:
+  workflow_dispatch:
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - name: Install dependencies
+        run: npm ci
+      - name: Build web assets
+        run: npm run build
+      - name: Add Capacitor Android
+        run: npx cap add android
+      - name: Sync Capacitor
+        run: npx cap sync android
+      - name: Inject Ringtone plugin
+        run: bash scripts/setup-android.sh
+      - name: Show MainActivity
+        run: cat android/app/src/main/java/com/matchreport/app/MainActivity.java
+      - name: Show RingtonePlugin
+        run: cat android/app/src/main/java/com/matchreport/app/ringtones/RingtonePlugin.kt
+      - name: Build with full error output
+        working-directory: android
+        run: ./gradlew assembleDebug --no-daemon --stacktrace 2>&1 || true
+      - name: Upload APK if built
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: warn
