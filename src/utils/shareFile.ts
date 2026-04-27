@@ -1,73 +1,51 @@
 import { Capacitor } from '@capacitor/core';
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
+import { Filesystem, Directory } from '@capacitor/filesystem';
 import { Share } from '@capacitor/share';
+
+function uint8ToBase64(arr: Uint8Array): string {
+  let binary = '';
+  const len = arr.byteLength;
+  for (let i = 0; i < len; i++) binary += String.fromCharCode(arr[i]);
+  return btoa(binary);
+}
 
 export async function sharePDF(base64DataUri: string, fileName: string): Promise<boolean> {
   try {
-    // Extract pure base64 from data URI
-    const base64 = base64DataUri.split(',')[1];
-
+    const base64 = base64DataUri.split(',')[1] || base64DataUri;
     if (Capacitor.isNativePlatform()) {
-      // Native: write to cache, then share
-      const result = await Filesystem.writeFile({
-        path: fileName,
-        data: base64,
-        directory: Directory.Cache,
-      });
-      await Share.share({
-        title: 'Spielbericht',
-        url: result.uri,
-        dialogTitle: 'Spielbericht teilen',
-      });
+      const result = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
+      await Share.share({ title: 'Spielbericht', url: result.uri, dialogTitle: 'Spielbericht teilen' });
       return true;
     } else {
-      // Web fallback: download via link
       const link = document.createElement('a');
       link.href = base64DataUri;
       link.download = fileName;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       return true;
     }
-  } catch (err) {
-    console.error('Share PDF error:', err);
-    return false;
-  }
+  } catch (err) { console.error('Share PDF:', err); return false; }
 }
 
 export async function shareXLS(data: Uint8Array, fileName: string): Promise<boolean> {
   try {
-    // Convert to base64
-    let binary = '';
-    for (let i = 0; i < data.length; i++) {
-      binary += String.fromCharCode(data[i]);
-    }
-    const base64 = btoa(binary);
-
+    const base64 = uint8ToBase64(data);
     if (Capacitor.isNativePlatform()) {
-      const result = await Filesystem.writeFile({
-        path: fileName,
-        data: base64,
-        directory: Directory.Cache,
-      });
-      await Share.share({
-        title: 'Spielbericht',
-        url: result.uri,
-        dialogTitle: 'Spielbericht teilen',
-      });
+      const result = await Filesystem.writeFile({ path: fileName, data: base64, directory: Directory.Cache });
+      await Share.share({ title: 'Spielbericht', url: result.uri, dialogTitle: 'Spielbericht teilen' });
       return true;
     } else {
-      // Web fallback
       const blob = new Blob([data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.download = fileName;
+      document.body.appendChild(link);
       link.click();
+      document.body.removeChild(link);
       URL.revokeObjectURL(url);
       return true;
     }
-  } catch (err) {
-    console.error('Share XLS error:', err);
-    return false;
-  }
+  } catch (err) { console.error('Share XLS:', err); return false; }
 }

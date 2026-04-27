@@ -12,6 +12,7 @@ import { sharePDF, shareXLS } from './utils/shareFile';
 import { db, initSoundDefaults, requestPersistentStorage } from './db';
 import type { Match, SoundConfig } from './db';
 import { Ringtones } from './plugins/ringtones';
+import { getPresetsForCategory, playPresetById, PRESETS } from './utils/soundPresets';
 
 function fmt(sec:number){const m=Math.floor(Math.abs(sec)/60);const s=Math.abs(sec)%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;}
 
@@ -21,8 +22,18 @@ function vibrate(){try{navigator.vibrate?.([300,100,300]);}catch(_){}}
 async function playEventSound(eventType:string){
   try{
     const cfg=await db.soundConfigs.get(eventType);
-    if(cfg?.uri){await Ringtones.play({uri:cfg.uri});return;}
-    playWebTone(eventType==='goal'?2400:eventType==='halftime'||eventType==='fulltime'?3200:1800);
+    if(cfg?.uri){
+      // Check if it's a preset ID
+      if(cfg.uri.startsWith('preset:')){
+        playPresetById(cfg.uri.replace('preset:',''));
+        return;
+      }
+      // Try native ringtone
+      try{await Ringtones.play({uri:cfg.uri});return;}catch(_){}
+    }
+    // Default sounds per event type
+    const defaults:Record<string,string>={goal:'goal-fanfare',eigentor:'eigen-sad',elfmeter:'elf-drum',yellow:'card-short',red:'card-alarm',sub:'sub-bell',halftime:'ht-whistle',fulltime:'ft-triple'};
+    playPresetById(defaults[eventType]||'goal-fanfare');
   }catch(_){playWebTone();}
 }
 
@@ -70,7 +81,9 @@ function Modal({title,onClose,children}:any){return(<div onClick={onClose} style
 
 function PBtn({p,onClick}:any){return(<button onClick={()=>onClick(p)} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,color:C.tx,textAlign:"left",width:"100%",marginBottom:4}}><span style={{background:C.grn,color:"#fff",borderRadius:6,width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700,fontSize:14,fontFamily:"'JetBrains Mono',monospace"}}>{p.number}</span><span style={{fontSize:14,fontWeight:500}}>{p.name}{p.isGoalkeeper&&<span style={{color:C.yel,marginLeft:6,fontSize:11}}>TW</span>}{p.isCaptain&&<span style={{color:C.blu,marginLeft:6,fontSize:11}}>C</span>}</span></button>);}
 
-function NavBar({onHome,title,onBack}:any){return(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>{onBack?<button onClick={onBack} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13}}><ChevronLeft size={18}/> Zurück</button>:<div/>}{title&&<span style={{fontSize:13,fontWeight:700,color:C.grn}}>{title}</span>}<button onClick={onHome} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:12}}><Home size={16}/></button></div>);}
+function NavBar({title,onBack}:any){return(<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>{onBack?<button onClick={onBack} style={{background:"none",border:"none",color:C.txd,cursor:"pointer",display:"flex",alignItems:"center",gap:4,fontSize:13}}><ChevronLeft size={18}/> Zurück</button>:<div/>}{title&&<span style={{fontSize:13,fontWeight:700,color:C.grn}}>{title}</span>}<div style={{width:40}}/></div>);}
+
+function BottomBar({onHome,screen}:any){if(screen==="home")return null;return(<div style={{position:"fixed",bottom:0,left:0,right:0,zIndex:50,background:C.card,borderTop:`1px solid ${C.bdr}`,padding:"8px 16px 20px",display:"flex",justifyContent:"center"}}><button onClick={onHome} style={{background:C.grn,border:"none",borderRadius:14,padding:"14px 40px",cursor:"pointer",color:"#fff",display:"flex",alignItems:"center",gap:8,fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",boxShadow:"0 -2px 20px rgba(16,185,129,0.3)"}}><Home size={22}/> Hauptmenü</button></div>);}
 
 export default function MatchReport(){
   const [screen,setScreen]=useState("home");
@@ -194,84 +207,96 @@ export default function MatchReport(){
   }
 
   /* ═══ SOUNDS ═══ */
-  if(screen==="sounds"){
-    const labels:Record<string,string>={goal:"⚽ Tor",eigentor:"⚽ Eigentor",elfmeter:"⚽ Elfmeter",yellow:"🟨 Gelbe Karte",red:"🟥 Rote Karte",sub:"🔄 Wechsel",halftime:"⏱ Halbzeit",fulltime:"🏁 Spielende"};
-    const [ringList,setRingList]=useState<{title:string;uri:string}[]>([]);
-    const [pickingFor,setPickingFor]=useState<string|null>(null);
 
-    async function pickSound(id:string){
-      try{
-        const existing=soundCfgs.find(s=>s.id===id);
-        const result=await Ringtones.pick({type:"notification",title:`Sound: ${labels[id]||id}`,existingUri:existing?.uri||undefined});
-        if(!result.cancelled&&result.uri){
-          await db.soundConfigs.update(id,{uri:result.uri});
-          await loadSounds();
-          flash("ok");
-          return;
-        }
+  /* ═══ SOUNDS ═══ */
+  if(screen==="sounds"){
+    const cats:{id:string,label:string,cat:string}[]=[
+      {id:"goal",label:"⚽ Tor",cat:"goal"},{id:"eigentor",label:"⚽ Eigentor",cat:"eigentor"},
+      {id:"elfmeter",label:"⚽ Elfmeter",cat:"elfmeter"},{id:"yellow",label:"🟨 Gelbe Karte",cat:"yellow"},
+      {id:"red",label:"🟥 Rote Karte",cat:"red"},{id:"sub",label:"🔄 Wechsel",cat:"sub"},
+      {id:"halftime",label:"⏱ Halbzeit",cat:"halftime"},{id:"fulltime",label:"🏁 Spielende",cat:"fulltime"},
+    ];
+    const [expandCat,setExpandCat]=useState<string|null>(null);
+
+    async function selectPreset(evId:string,presetId:string){
+      await db.soundConfigs.update(evId,{uri:`preset:${presetId}`});
+      await loadSounds();flash("ok");
+    }
+    async function tryNative(evId:string){
+      try{const r=await Ringtones.pick({type:"notification",title:"Geräte-Sound"});
+        if(!r.cancelled&&r.uri){await db.soundConfigs.update(evId,{uri:r.uri});await loadSounds();flash("ok");return;}
       }catch(_){}
-      // Fallback: show ringtone list
-      try{
-        const res=await Ringtones.list({type:"notification"});
-        if(res.ringtones.length>0){setRingList(res.ringtones);setPickingFor(id);return;}
+      try{const r=await Ringtones.list({type:"all"});
+        if(r.ringtones.length>0){setModal("nlist");setMD({evId,list:r.ringtones});return;}
       }catch(_){}
       flash("err");
     }
-
-    async function selectFromList(uri:string){
-      if(pickingFor){
-        await db.soundConfigs.update(pickingFor,{uri});
-        await loadSounds();
-        setPickingFor(null);setRingList([]);
-        flash("ok");
-      }
-    }
-
-    async function testSound(id:string){
-      const cfg=soundCfgs.find(s=>s.id===id);
+    async function testCur(evId:string){
+      const cfg=soundCfgs.find(s=>s.id===evId);
+      if(cfg?.uri?.startsWith('preset:')){playPresetById(cfg.uri.replace('preset:',''));return;}
       if(cfg?.uri){try{await Ringtones.play({uri:cfg.uri});return;}catch(_){}}
-      playWebTone();
+      playEventSound(evId);
     }
+    async function clearSnd(evId:string){await db.soundConfigs.update(evId,{uri:null});await loadSounds();}
 
-    async function clearSound(id:string){
-      await db.soundConfigs.update(id,{uri:null});
-      await loadSounds();
+    function getSndName(evId:string):string{
+      const cfg=soundCfgs.find(s=>s.id===evId);
+      if(!cfg?.uri)return"Standard";
+      if(cfg.uri.startsWith('preset:')){const p=PRESETS.find(x=>x.id===cfg.uri!.replace('preset:',''));return p?p.name:"Preset";}
+      return"Geräte-Sound";
     }
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 100px"}}>
-        <NavBar onHome={goHome} title="Sound-Einstellungen" onBack={goHome}/>
+      <div style={{padding:"16px 16px 120px"}}>
+        <NavBar title="Sound-Einstellungen" onBack={goHome}/>
+        <div style={{fontSize:13,color:C.txd,marginBottom:16}}>Tippe auf ein Ereignis um den Sound zu ändern.</div>
 
-        <div style={{fontSize:13,color:C.txd,marginBottom:16}}>Wähle für jedes Ereignis einen Geräte-Sound. Ohne Auswahl wird ein Standard-Ton verwendet.</div>
-
-        {Object.entries(labels).map(([id,label])=>{
+        {cats.map(({id,label,cat})=>{
+          const isOpen=expandCat===id;
+          const presets=getPresetsForCategory(cat);
           const cfg=soundCfgs.find(s=>s.id===id);
-          const hasSound=!!cfg?.uri;
+          const hasCust=!!cfg?.uri;
+
           return(
-            <div key={id} style={{background:C.card,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.bdr}`}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                <span style={{fontSize:14,fontWeight:600}}>{label}</span>
-                <span style={{fontSize:11,color:hasSound?C.grn:C.txd}}>{hasSound?"Zugewiesen":"Standard"}</span>
-              </div>
-              <div style={{display:"flex",gap:6}}>
-                <Btn small color={C.blu} onClick={()=>pickSound(id)}><Music size={14}/> Wählen</Btn>
-                <Btn small color={C.card2} onClick={()=>testSound(id)}><Volume2 size={14}/> Test</Btn>
-                {hasSound&&<Btn small color={C.red} onClick={()=>clearSound(id)}><VolumeX size={14}/></Btn>}
-              </div>
+            <div key={id} style={{background:C.card,borderRadius:12,marginBottom:10,border:`1px solid ${isOpen?C.grn:C.bdr}`,overflow:"hidden"}}>
+              <button onClick={()=>setExpandCat(isOpen?null:id)} style={{width:"100%",padding:"14px 16px",background:"none",border:"none",color:C.tx,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:15,fontWeight:600}}>{label}</span>
+                <span style={{fontSize:12,color:hasCust?C.grn:C.txd,fontWeight:500}}>{getSndName(id)} ▾</span>
+              </button>
+              {isOpen&&<div style={{padding:"0 16px 14px"}}>
+                <div style={{fontSize:11,color:C.txd,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>Vorauswahl</div>
+                <div style={{display:"flex",flexDirection:"column",gap:4,marginBottom:12}}>
+                  {presets.map(p=>{
+                    const isAct=cfg?.uri===`preset:${p.id}`;
+                    return(<div key={p.id} style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <button onClick={()=>p.play()} style={{background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:6,padding:"6px 10px",color:C.tx,cursor:"pointer",fontSize:12,flexShrink:0}}><Volume2 size={12}/></button>
+                      <button onClick={()=>selectPreset(id,p.id)} style={{flex:1,padding:"8px 12px",background:isAct?`${C.grn}30`:C.card2,border:`1px solid ${isAct?C.grn:C.bdr}`,borderRadius:8,color:isAct?C.grn:C.tx,cursor:"pointer",textAlign:"left",fontSize:13,fontWeight:isAct?700:400}}>
+                        {p.name}{isAct?" ✓":""}
+                      </button>
+                    </div>);
+                  })}
+                </div>
+                <div style={{fontSize:11,color:C.txd,fontWeight:600,marginBottom:6,textTransform:"uppercase"}}>Eigener Sound</div>
+                <div style={{display:"flex",gap:6}}>
+                  <Btn small color={C.blu} onClick={()=>tryNative(id)}><Music size={14}/> Vom Gerät</Btn>
+                  <Btn small color={C.card2} onClick={()=>testCur(id)}><Volume2 size={14}/> Testen</Btn>
+                  {hasCust&&<Btn small color={C.red} onClick={()=>clearSnd(id)}><VolumeX size={14}/></Btn>}
+                </div>
+              </div>}
             </div>
           );
         })}
 
         {msg==="ok"&&<div style={{padding:10,background:`${C.grn}20`,borderRadius:10,fontSize:13,color:C.grn,textAlign:"center",marginTop:8}}>✅ Sound gespeichert!</div>}
-        {msg==="err"&&<div style={{padding:10,background:`${C.red}20`,borderRadius:10,fontSize:13,color:C.red,textAlign:"center",marginTop:8}}>Sound-Auswahl nicht verfügbar. Bitte Berechtigungen prüfen.</div>}
+        {msg==="err"&&<div style={{padding:10,background:`${C.red}20`,borderRadius:10,fontSize:13,color:C.red,textAlign:"center",marginTop:8}}>Geräte-Sounds nicht verfügbar.</div>}
       </div>
 
-      {pickingFor&&ringList.length>0&&<Modal title={`Sound wählen: ${labels[pickingFor]||pickingFor}`} onClose={()=>{setPickingFor(null);setRingList([]);}}>
-        <div style={{maxHeight:300,overflowY:"auto"}}>
-          {ringList.map((r,i)=>(<button key={i} onClick={()=>selectFromList(r.uri)} style={{display:"block",width:"100%",padding:"10px 14px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,cursor:"pointer",textAlign:"left",marginBottom:4,fontSize:13}}>{r.title}</button>))}
-        </div>
+      {modal==="nlist"&&mD.list&&<Modal title="Geräte-Sound wählen" onClose={()=>setModal(null)}>
+        <div style={{maxHeight:350,overflowY:"auto"}}>{mD.list.map((r:any,i:number)=>(<button key={i} onClick={async()=>{await db.soundConfigs.update(mD.evId,{uri:r.uri});await loadSounds();setModal(null);flash("ok");}} style={{display:"block",width:"100%",padding:"10px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,cursor:"pointer",textAlign:"left",marginBottom:4,fontSize:13}}>{r.title}</button>))}</div>
       </Modal>}
+
+      <BottomBar onHome={goHome} screen={screen}/>
     </div>);
   }
 
@@ -286,8 +311,8 @@ export default function MatchReport(){
       const hz1=m.events.filter(e=>e.half===1&&e.type!=="info"),hz2=m.events.filter(e=>e.half===2&&e.type!=="info");
       return(
       <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-        <div style={{padding:"16px 16px 100px"}}>
-          <NavBar onHome={goHome} title="Archiv" onBack={()=>setViewMatch(null)}/>
+        <div style={{padding:"16px 16px 120px"}}>
+          <NavBar title="Archiv" onBack={()=>setViewMatch(null)}/>
           <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
             <div style={{fontSize:12,color:C.txd,marginBottom:8}}>{new Date(m.createdAt).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'})}</div>
             <div style={{fontSize:20,fontWeight:800}}>{m.homeTeam} {m.homeScore} : {m.awayScore} {m.awayTeam}</div>
@@ -319,8 +344,8 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 100px"}}>
-        <NavBar onHome={goHome} title="Spielarchiv"/>
+      <div style={{padding:"16px 16px 120px"}}>
+        <NavBar title="Spielarchiv"/>
         {archivedMatches.length===0?<div style={{textAlign:"center",color:C.txd,padding:40}}>Noch keine archivierten Spiele</div>:
           archivedMatches.map(m=>(<div key={m.id} style={{background:C.card,borderRadius:12,padding:14,marginBottom:10,border:`1px solid ${C.bdr}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
             <button onClick={()=>setViewMatch(m)} style={{background:"none",border:"none",color:C.tx,cursor:"pointer",textAlign:"left",flex:1}}>
@@ -330,6 +355,7 @@ export default function MatchReport(){
             <button onClick={()=>{if(confirm('Spiel löschen?'))deleteArchivedMatch(m.id);}} style={{background:"none",border:"none",color:C.red,cursor:"pointer",padding:8,opacity:0.6}}><Trash2 size={16}/></button>
           </div>))
         }
+      <BottomBar onHome={goHome} screen={screen}/>
       </div>
     </div>);
   }
@@ -337,8 +363,8 @@ export default function MatchReport(){
   /* ═══ SETTINGS ═══ */
   if(screen==="settings"){return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 100px"}}>
-        <NavBar onHome={goHome} title="Spieleinstellungen"/>
+      <div style={{padding:"16px 16px 120px"}}>
+        <NavBar title="Spieleinstellungen"/>
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Clock size={14} style={{verticalAlign:"middle",marginRight:6}}/>Spielparameter</div>
@@ -400,6 +426,7 @@ export default function MatchReport(){
         <Btn full color={C.grn} onClick={()=>{if(!ht||!at){alert("Bitte Mannschaftsnamen eingeben!");return;}setScreen("game");}}><Play size={18}/> Zum Spielfeld</Btn>
       </div>
 
+      <BottomBar onHome={goHome} screen={screen}/>
       {showAdd&&<Modal title="Spieler hinzufügen" onClose={()=>setShowAdd(false)}>
         <div style={{display:"flex",gap:8,marginBottom:12}}>{[{k:"home",l:ht||"Heim"},{k:"away",l:at||"Gast"}].map(({k,l})=>(<button key={k} onClick={()=>setAddTeam(k)} style={{flex:1,padding:8,borderRadius:8,cursor:"pointer",background:addTeam===k?C.grn:C.card2,color:"#fff",border:`1px solid ${addTeam===k?C.grn:C.bdr}`,fontWeight:600,fontSize:13}}>{l}</button>))}</div>
         <div style={{display:"flex",gap:8,marginBottom:12}}><input value={addNum} onChange={(e:any)=>setAddNum(e.target.value)} placeholder="Nr." type="number" style={{...inp,width:70,textAlign:"center"}}/><input value={addName} onChange={(e:any)=>setAddName(e.target.value)} placeholder="Nachname, Vorname" style={{...inp,flex:1}}/></div>
@@ -498,8 +525,8 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 100px"}}>
-        <NavBar onHome={goHome} title="Korrektur" onBack={()=>setScreen("game")}/>
+      <div style={{padding:"16px 16px 120px"}}>
+        <NavBar title="Korrektur" onBack={()=>setScreen("game")}/>
 
         <div style={{background:C.card,borderRadius:14,padding:16,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:20}}>
@@ -552,6 +579,8 @@ export default function MatchReport(){
         <Btn full color={C.grn} onClick={()=>setScreen("report")}><Save size={18}/> Alles korrekt — Spielbericht</Btn>
       </div>
 
+      <BottomBar onHome={goHome} screen={screen}/>
+
       {/* Review Modals */}
       {modal==="rev-goal"&&<Modal title={`Tor — ${mT==="home"?ht:at}`} onClose={()=>setModal(null)}>
         {mS===0?<div style={{display:"flex",flexDirection:"column",gap:8}}>
@@ -599,8 +628,8 @@ export default function MatchReport(){
 
     return(
     <div style={{background:C.bg,minHeight:"100vh",color:C.tx,fontFamily:"'Segoe UI',sans-serif"}}>
-      <div style={{padding:"16px 16px 100px"}}>
-        <NavBar onHome={goHome} title="Spielbericht" onBack={()=>setScreen("review")}/>
+      <div style={{padding:"16px 16px 120px"}}>
+        <NavBar title="Spielbericht" onBack={()=>setScreen("review")}/>
 
         <div style={{background:C.card,borderRadius:16,padding:20,marginBottom:16,border:`1px solid ${C.bdr}`,textAlign:"center"}}>
           <div style={{fontSize:12,color:C.txd,marginBottom:10,textTransform:"uppercase",fontWeight:600}}>Endergebnis</div>
