@@ -32,15 +32,30 @@ jobs:
         run: bash scripts/setup-android.sh
       - name: Build debug APK
         working-directory: android
-        run: ./gradlew assembleDebug --no-daemon --stacktrace
-      - name: List APK files
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace > ../gradle-output.txt 2>&1 || true
+          echo "=== LAST 50 LINES ==="
+          tail -50 ../gradle-output.txt
+          # Check if APK was actually built
+          if find app/build/outputs/apk/debug -name "*.apk" 2>/dev/null | grep -q .; then
+            echo "APK_BUILT=true"
+          else
+            echo "APK_BUILT=false"
+            echo "=== ERRORS ==="
+            grep -i "error:" ../gradle-output.txt | head -20
+            exit 1
+          fi
+      - name: Upload build log
         if: always()
-        run: find android -name "*.apk" -type f 2>/dev/null || echo "No APK found"
+        uses: actions/upload-artifact@v4
+        with:
+          name: gradle-log
+          path: gradle-output.txt
+          retention-days: 3
       - name: Upload APK
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: matchreport-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
           retention-days: 30
