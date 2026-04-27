@@ -6,9 +6,9 @@ import {
   X, Check, Shirt, Eye, Edit, Save, FileSpreadsheet, Home,
   Volume2, VolumeX, Archive, Music
 } from "lucide-react";
-import { generatePDF } from './utils/exportPdf';
-import { generateXLS } from './utils/exportXls';
-import { sharePDF, shareXLS } from './utils/shareFile';
+
+
+
 import { db, initSoundDefaults, requestPersistentStorage } from './db';
 import type { Match, SoundConfig } from './db';
 import { Ringtones } from './plugins/ringtones';
@@ -16,25 +16,19 @@ import { getPresetsForCategory, playPresetById, PRESETS } from './utils/soundPre
 
 function fmt(sec:number){const m=Math.floor(Math.abs(sec)/60);const s=Math.abs(sec)%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;}
 
-function playWebTone(freq=3200){try{const ctx=new AudioContext();const g=ctx.createGain();g.connect(ctx.destination);g.gain.value=0.3;[freq,freq+400].forEach(f=>{const o=ctx.createOscillator();o.connect(g);o.frequency.value=f;o.type="sine";o.start();setTimeout(()=>o.stop(),600);});setTimeout(()=>g.gain.value=0,300);setTimeout(()=>g.gain.value=0.3,400);setTimeout(()=>g.gain.value=0.01,550);}catch(_){}}
+function playWebTone(freq=3200){playPresetById('goal-fanfare');}
 function vibrate(){try{navigator.vibrate?.([300,100,300]);}catch(_){}}
 
-async function playEventSound(eventType:string){
+function playEventSound(eventType:string){
   try{
-    const cfg=await db.soundConfigs.get(eventType);
-    if(cfg?.uri){
-      // Check if it's a preset ID
-      if(cfg.uri.startsWith('preset:')){
-        playPresetById(cfg.uri.replace('preset:',''));
-        return;
-      }
-      // Try native ringtone
-      try{await Ringtones.play({uri:cfg.uri});return;}catch(_){}
-    }
-    // Default sounds per event type
     const defaults:Record<string,string>={goal:'goal-fanfare',eigentor:'eigen-sad',elfmeter:'elf-drum',yellow:'card-short',red:'card-alarm',sub:'sub-bell',halftime:'ht-whistle',fulltime:'ft-triple'};
-    playPresetById(defaults[eventType]||'goal-fanfare');
-  }catch(_){playWebTone();}
+    // Try to get custom sound config from DB
+    db.soundConfigs.get(eventType).then(cfg=>{
+      if(cfg?.uri?.startsWith('preset:')){playPresetById(cfg.uri.replace('preset:',''));return;}
+      if(cfg?.uri){try{Ringtones.play({uri:cfg.uri});}catch(_){playPresetById(defaults[eventType]||'goal-fanfare');} return;}
+      playPresetById(defaults[eventType]||'goal-fanfare');
+    }).catch(()=>{playPresetById(defaults[eventType]||'goal-fanfare');});
+  }catch(_){playPresetById('goal-fanfare');}
 }
 
 function parseCSV(text:string){
@@ -307,8 +301,8 @@ export default function MatchReport(){
     if(viewMatch){
       const m=viewMatch;
       const exportData={homeTeam:m.homeTeam,awayTeam:m.awayTeam,homeScore:m.homeScore,awayScore:m.awayScore,htHomeScore:m.htHomeScore,htAwayScore:m.htAwayScore,homePlayers:m.homePlayers,awayPlayers:m.awayPlayers,events:m.events,notes:m.notes,halfDuration:m.halfDuration};
-      async function reExportPdf(){setExporting("pdf");try{const d=generatePDF(exportData);await sharePDF(d,`Spielbericht_${m.homeTeam}_vs_${m.awayTeam}.pdf`);flash("pdf_ok");}catch(_){flash("pdf_err");}setExporting("");}
-      async function reExportXls(){setExporting("xls");try{const d=generateXLS(exportData);await shareXLS(d,`Spielbericht_${m.homeTeam}_vs_${m.awayTeam}.xlsx`);flash("xls_ok");}catch(_){flash("xls_err");}setExporting("");}
+      async function reExportPdf(){setExporting("pdf");try{const{generatePDF}=await import('./utils/exportPdf');const{sharePDF}=await import('./utils/shareFile');const d=generatePDF(exportData);await sharePDF(d,`Spielbericht_${m.homeTeam}_vs_${m.awayTeam}.pdf`);flash("pdf_ok");}catch(_){flash("pdf_err");}setExporting("");}
+      async function reExportXls(){setExporting("xls");try{const{generateXLS}=await import('./utils/exportXls');const{shareXLS}=await import('./utils/shareFile');const d=generateXLS(exportData);await shareXLS(d,`Spielbericht_${m.homeTeam}_vs_${m.awayTeam}.xlsx`);flash("xls_ok");}catch(_){flash("xls_err");}setExporting("");}
 
       const hz1=m.events.filter(e=>e.half===1&&e.type!=="info"),hz2=m.events.filter(e=>e.half===2&&e.type!=="info");
       return(
@@ -622,8 +616,8 @@ export default function MatchReport(){
     const o1=evts.find(e=>e.half===1&&e.type==="info"),o2=evts.find(e=>e.half===2&&e.type==="info");
     const exportData={homeTeam:ht,awayTeam:at,homeScore:hS,awayScore:aS,htHomeScore:htH,htAwayScore:htA,homePlayers:hp,awayPlayers:ap,events:evts,notes,halfDuration:hd};
 
-    async function doPdf(){setExporting("pdf");try{const d=generatePDF(exportData);await sharePDF(d,`Spielbericht_${ht}_vs_${at}.pdf`);flash("ok");}catch(e){console.error(e);flash("pdf_err");}setExporting("");}
-    async function doXls(){setExporting("xls");try{const d=generateXLS(exportData);await shareXLS(d,`Spielbericht_${ht}_vs_${at}.xlsx`);flash("ok");}catch(e){console.error(e);flash("xls_err");}setExporting("");}
+    async function doPdf(){setExporting("pdf");try{const{generatePDF}=await import('./utils/exportPdf');const{sharePDF}=await import('./utils/shareFile');const d=generatePDF(exportData);await sharePDF(d,`Spielbericht_${ht}_vs_${at}.pdf`);flash("ok");}catch(e){console.error(e);flash("pdf_err");}setExporting("");}
+    async function doXls(){setExporting("xls");try{const{generateXLS}=await import('./utils/exportXls');const{shareXLS}=await import('./utils/shareFile');const d=generateXLS(exportData);await shareXLS(d,`Spielbericht_${ht}_vs_${at}.xlsx`);flash("ok");}catch(e){console.error(e);flash("xls_err");}setExporting("");}
     async function doSaveAndReset(){await saveMatchToArchive();resetAll();flash("ok");}
 
     return(
