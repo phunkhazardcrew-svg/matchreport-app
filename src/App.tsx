@@ -126,6 +126,9 @@ export default function MatchReport(){
   const [soundCfgs,setSoundCfgs]=useState<SoundConfig[]>([]);
   const [archivedMatches,setArchivedMatches]=useState<Match[]>([]);
   const [viewMatch,setViewMatch]=useState<Match|null>(null);
+  const [expandCat,setExpandCat]=useState<string|null>(null);
+  const [addMin,setAddMin]=useState("");
+  const [addHalf2,setAddHalf2]=useState(1);
   const tmr=useRef<any>(null);
   const inp:any={width:"100%",boxSizing:"border-box",padding:"10px 14px",background:C.card2,border:`1px solid ${C.bdr}`,borderRadius:8,color:C.tx,fontSize:15,outline:"none"};
 
@@ -216,7 +219,6 @@ export default function MatchReport(){
       {id:"red",label:"🟥 Rote Karte",cat:"red"},{id:"sub",label:"🔄 Wechsel",cat:"sub"},
       {id:"halftime",label:"⏱ Halbzeit",cat:"halftime"},{id:"fulltime",label:"🏁 Spielende",cat:"fulltime"},
     ];
-    const [expandCat,setExpandCat]=useState<string|null>(null);
 
     async function selectPreset(evId:string,presetId:string){
       await db.soundConfigs.update(evId,{uri:`preset:${presetId}`});
@@ -492,8 +494,6 @@ export default function MatchReport(){
 
   /* ═══ REVIEW ═══ */
   if(screen==="review"){
-    const [addMin,setAddMin]=useState("");
-    const [addHalf2,setAddHalf2]=useState(1);
     const hz1r=evts.filter(e=>e.half===1&&e.type!=="info"),hz2r=evts.filter(e=>e.half===2&&e.type!=="info");
     const o1r=evts.find(e=>e.half===1&&e.type==="info"),o2r=evts.find(e=>e.half===2&&e.type==="info");
 
