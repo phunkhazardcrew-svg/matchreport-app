@@ -1,202 +1,187 @@
 #!/bin/bash
-# Setup custom Android plugins after Capacitor generates the android/ directory
 set -e
+echo "=== Injecting Ringtone Plugin ==="
 
 ANDROID_DIR="android/app/src/main/java/com/matchreport/app"
 PLUGIN_DIR="$ANDROID_DIR/ringtones"
-
-echo "=== Setting up custom Android plugins ==="
-
-# Create plugin directory
 mkdir -p "$PLUGIN_DIR"
 
-# Write RingtonePlugin.kt
+# Minimal plugin: list, play, stop, playLoud (STREAM_ALARM)
 cat > "$PLUGIN_DIR/RingtonePlugin.kt" << 'KTEOF'
 package com.matchreport.app.ringtones
 
-import android.Manifest
-import android.app.Activity
-import android.content.Intent
+import android.content.ContentUris
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.AudioManager
+import android.media.MediaPlayer
+import android.media.Ringtone
 import android.media.RingtoneManager
 import android.net.Uri
-import androidx.activity.result.ActivityResult
-import com.getcapacitor.*
-import com.getcapacitor.annotation.*
+import android.os.Handler
+import android.os.Looper
+import com.getcapacitor.JSArray
+import com.getcapacitor.JSObject
+import com.getcapacitor.Plugin
+import com.getcapacitor.PluginCall
+import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.CapacitorPlugin
 
-@CapacitorPlugin(
-    name = "Ringtones",
-    permissions = [Permission(alias = "audio", strings = [
-        Manifest.permission.READ_MEDIA_AUDIO
-    ])]
-)
+@CapacitorPlugin(name = "Ringtones")
 class RingtonePlugin : Plugin() {
-    private val impl by lazy { RingtoneImpl(context) }
+
+    private var currentRingtone: Ringtone? = null
+    private var loudPlayer: MediaPlayer? = null
 
     @PluginMethod
     fun list(call: PluginCall) {
-        val type = typeFlag(call.getString("type", "all") ?: "all")
-        val items = impl.list(type)
-        val arr = JSArray()
-        items.forEach { arr.put(JSObject().apply { put("title", it.title); put("uri", it.uri) }) }
-        call.resolve(JSObject().apply { put("ringtones", arr) })
+        try {
+            val typeStr = call.getString("type", "all") ?: "all"
+            val type = when (typeStr.lowercase()) {
+                "ringtone" -> RingtoneManager.TYPE_RINGTONE
+                "notification" -> RingtoneManager.TYPE_NOTIFICATION
+                "alarm" -> RingtoneManager.TYPE_ALARM
+                else -> RingtoneManager.TYPE_ALL
+            }
+            val mgr = RingtoneManager(context)
+            mgr.setType(type)
+            val cursor = mgr.cursor
+            val arr = JSArray()
+            while (cursor.moveToNext()) {
+                val title = cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX)
+                val baseUri = cursor.getString(RingtoneManager.URI_COLUMN_INDEX)
+                val id = cursor.getLong(RingtoneManager.ID_COLUMN_INDEX)
+                val uri = ContentUris.withAppendedId(Uri.parse(baseUri), id).toString()
+                val obj = JSObject()
+                obj.put("title", title)
+                obj.put("uri", uri)
+                arr.put(obj)
+            }
+            val ret = JSObject()
+            ret.put("ringtones", arr)
+            call.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("ringtones", JSArray())
+            call.resolve(ret)
+        }
     }
 
     @PluginMethod
     fun play(call: PluginCall) {
-        val uri = call.getString("uri") ?: return call.reject("Missing 'uri'")
-        impl.play(Uri.parse(uri))
-        call.resolve()
+        val uriStr = call.getString("uri") ?: return call.reject("Missing uri")
+        try {
+            stopAll()
+            currentRingtone = RingtoneManager.getRingtone(context, Uri.parse(uriStr))
+            currentRingtone?.play()
+            call.resolve()
+        } catch (e: Exception) {
+            call.reject("play failed: ${e.message}")
+        }
     }
 
     @PluginMethod
     fun stop(call: PluginCall) {
-        impl.stop()
+        stopAll()
         call.resolve()
     }
 
     @PluginMethod
     fun playLoud(call: PluginCall) {
-        val uri = call.getString("uri")
         try {
-            val am = context.getSystemService(android.content.Context.AUDIO_SERVICE) as android.media.AudioManager
-            // Use STREAM_ALARM to bypass silent mode
-            val oldVol = am.getStreamVolume(android.media.AudioManager.STREAM_ALARM)
-            val maxVol = am.getStreamMaxVolume(android.media.AudioManager.STREAM_ALARM)
-            am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, maxVol, 0)
-            
-            if (uri != null) {
-                val ringtone = android.media.RingtoneManager.getRingtone(context, android.net.Uri.parse(uri))
-                ringtone?.streamType = android.media.AudioManager.STREAM_ALARM
-                ringtone?.play()
-                // Restore volume after 3 seconds
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, oldVol, 0)
-                }, 3000)
+            stopAll()
+            val am = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+
+            // Get a sound URI - use provided or default notification
+            val uriStr = call.getString("uri")
+            val soundUri = if (uriStr != null) {
+                Uri.parse(uriStr)
             } else {
-                // Play default alarm sound
-                val defaultUri = android.media.RingtoneManager.getDefaultUri(android.media.RingtoneManager.TYPE_ALARM)
-                val ringtone = android.media.RingtoneManager.getRingtone(context, defaultUri)
-                ringtone?.streamType = android.media.AudioManager.STREAM_ALARM
-                ringtone?.play()
-                android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-                    ringtone?.stop()
-                    am.setStreamVolume(android.media.AudioManager.STREAM_ALARM, oldVol, 0)
-                }, 2000)
+                RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
             }
+
+            if (soundUri == null) {
+                call.reject("No sound URI available")
+                return
+            }
+
+            // Use MediaPlayer with USAGE_ALARM to bypass silent mode
+            loudPlayer = MediaPlayer().apply {
+                setDataSource(context, soundUri)
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                // Set volume to max
+                setVolume(1.0f, 1.0f)
+                prepare()
+                start()
+            }
+
+            // Auto-stop after 3 seconds
+            Handler(Looper.getMainLooper()).postDelayed({
+                try {
+                    loudPlayer?.stop()
+                    loudPlayer?.release()
+                    loudPlayer = null
+                } catch (_: Exception) {}
+            }, 3000)
+
             call.resolve()
         } catch (e: Exception) {
-            call.reject("playLoud failed: " + e.message)
+            call.reject("playLoud failed: ${e.message}")
         }
-    }
-
-    @PluginMethod
-    fun getDefault(call: PluginCall) {
-        val type = typeFlag(call.getString("type", "notification") ?: "notification")
-        val uri = RingtoneManager.getActualDefaultRingtoneUri(context, type)
-        call.resolve(JSObject().apply { put("uri", uri?.toString()) })
     }
 
     @PluginMethod
     fun pick(call: PluginCall) {
-        val type = typeFlag(call.getString("type", "notification") ?: "notification")
-        val intent = Intent(RingtoneManager.ACTION_RINGTONE_PICKER).apply {
-            putExtra(RingtoneManager.EXTRA_RINGTONE_TYPE, type)
-            putExtra(RingtoneManager.EXTRA_RINGTONE_TITLE, call.getString("title", "Sound auswählen"))
-            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_DEFAULT, true)
-            putExtra(RingtoneManager.EXTRA_RINGTONE_SHOW_SILENT, true)
-            call.getString("existingUri")?.let {
-                putExtra(RingtoneManager.EXTRA_RINGTONE_EXISTING_URI, Uri.parse(it))
-            }
-        }
-        startActivityForResult(call, intent, "pickResult")
-    }
-
-    @ActivityCallback
-    private fun pickResult(call: PluginCall, result: ActivityResult) {
+        // Simplified: return cancelled on web, native picker needs activity result
         val ret = JSObject()
-        if (result.resultCode == Activity.RESULT_OK) {
-            val uri: Uri? = result.data?.getParcelableExtra(RingtoneManager.EXTRA_RINGTONE_PICKED_URI)
-            ret.put("uri", uri?.toString())
-            ret.put("cancelled", false)
-        } else {
-            ret.put("uri", null)
-            ret.put("cancelled", true)
-        }
+        ret.put("uri", null)
+        ret.put("cancelled", true)
         call.resolve(ret)
     }
 
-    private fun typeFlag(s: String) = when (s.lowercase()) {
-        "ringtone" -> RingtoneManager.TYPE_RINGTONE
-        "notification" -> RingtoneManager.TYPE_NOTIFICATION
-        "alarm" -> RingtoneManager.TYPE_ALARM
-        else -> RingtoneManager.TYPE_ALL
+    @PluginMethod
+    fun getDefault(call: PluginCall) {
+        try {
+            val uri = RingtoneManager.getActualDefaultRingtoneUri(
+                context, RingtoneManager.TYPE_NOTIFICATION
+            )
+            val ret = JSObject()
+            ret.put("uri", uri?.toString())
+            call.resolve(ret)
+        } catch (e: Exception) {
+            val ret = JSObject()
+            ret.put("uri", null)
+            call.resolve(ret)
+        }
+    }
+
+    private fun stopAll() {
+        try { currentRingtone?.stop() } catch (_: Exception) {}
+        currentRingtone = null
+        try { loudPlayer?.stop(); loudPlayer?.release() } catch (_: Exception) {}
+        loudPlayer = null
     }
 }
 KTEOF
 
-# Write RingtoneImpl.kt
-cat > "$PLUGIN_DIR/RingtoneImpl.kt" << 'KTEOF2'
-package com.matchreport.app.ringtones
-
-import android.content.ContentUris
-import android.content.Context
-import android.media.Ringtone
-import android.media.RingtoneManager
-import android.net.Uri
-
-data class RingtoneInfo(val title: String, val uri: String)
-
-class RingtoneImpl(private val context: Context) {
-    private var current: Ringtone? = null
-
-    fun list(type: Int): List<RingtoneInfo> {
-        val mgr = RingtoneManager(context).apply { setType(type) }
-        val cursor = mgr.cursor
-        val out = mutableListOf<RingtoneInfo>()
-        while (cursor.moveToNext()) {
-            val title = cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX)
-            val baseUri = cursor.getString(RingtoneManager.URI_COLUMN_INDEX)
-            val id = cursor.getLong(RingtoneManager.ID_COLUMN_INDEX)
-            out += RingtoneInfo(title, ContentUris.withAppendedId(Uri.parse(baseUri), id).toString())
-        }
-        return out
-    }
-
-    fun play(uri: Uri) {
-        stop()
-        current = RingtoneManager.getRingtone(context, uri)
-        current?.play()
-    }
-
-    fun stop() {
-        current?.let { if (it.isPlaying) it.stop() }
-        current = null
-    }
-}
-KTEOF2
+echo "Plugin written: $PLUGIN_DIR/RingtonePlugin.kt"
 
 # Register plugin in MainActivity
 MAIN_ACTIVITY="android/app/src/main/java/com/matchreport/app/MainActivity.java"
 if [ -f "$MAIN_ACTIVITY" ]; then
-  # Check if already registered
   if ! grep -q "RingtonePlugin" "$MAIN_ACTIVITY"; then
     sed -i 's/import com.getcapacitor.BridgeActivity;/import com.getcapacitor.BridgeActivity;\nimport com.matchreport.app.ringtones.RingtonePlugin;/' "$MAIN_ACTIVITY"
-    sed -i 's/public class MainActivity extends BridgeActivity {/public class MainActivity extends BridgeActivity {\n    @Override\n    protected void onCreate(android.os.Bundle savedInstanceState) {\n        registerPlugin(RingtonePlugin.class);\n        super.onCreate(savedInstanceState);\n    }/' "$MAIN_ACTIVITY"
+    sed -i '/public class MainActivity/a\    @Override\n    protected void onCreate(android.os.Bundle savedInstanceState) {\n        registerPlugin(RingtonePlugin.class);\n        super.onCreate(savedInstanceState);\n    }' "$MAIN_ACTIVITY"
     echo "Registered RingtonePlugin in MainActivity"
   else
     echo "RingtonePlugin already registered"
   fi
-else
-  echo "WARNING: MainActivity.java not found at $MAIN_ACTIVITY — will be created by cap add android"
 fi
 
-# Add audio permission to AndroidManifest
-MANIFEST="android/app/src/main/AndroidManifest.xml"
-if [ -f "$MANIFEST" ]; then
-  if ! grep -q "READ_MEDIA_AUDIO" "$MANIFEST"; then
-    sed -i 's/<application/<uses-permission android:name="android.permission.READ_MEDIA_AUDIO" \/>\n    <application/' "$MANIFEST"
-    echo "Added READ_MEDIA_AUDIO permission"
-  fi
-fi
-
-echo "=== Android setup complete ==="
+echo "=== Plugin injection complete ==="
