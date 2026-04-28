@@ -16,6 +16,7 @@ export class RingtonesWeb extends WebPlugin implements RingtonesPlugin {
     } catch (_) {}
   }
   async stop(): Promise<void> {}
+  async setAlarmConfig(): Promise<void> {}
   async scheduleAlarm(): Promise<void> {}
   async cancelAlarm(): Promise<void> {}
   async startGame(): Promise<void> {}

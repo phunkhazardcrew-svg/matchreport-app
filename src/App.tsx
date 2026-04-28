@@ -18,6 +18,7 @@ function fmt(sec:number){const m=Math.floor(Math.abs(sec)/60);const s=Math.abs(s
 function playWebTone(freq=3200){playPresetById('goal-fanfare');}
 
 function scheduleHalftimeAlarm(remainingSeconds: number) {
+  try{Ringtones.setAlarmConfig({toneDuration:alarmTone,vibDuration:alarmVib});}catch(_){}
   try {
     const triggerAt = Date.now() + (remainingSeconds * 1000);
     Ringtones.scheduleAlarm({ triggerAt, toneDuration: alarmToneSec, vibDuration: alarmVibSec });
@@ -141,6 +142,8 @@ export default function MatchReport(){
   const [expandCat,setExpandCat]=useState<string|null>(null);
   const [addMin,setAddMin]=useState("");
   const [addHalf2,setAddHalf2]=useState(1);
+  const [alarmTone,setAlarmTone]=useState(5);
+  const [alarmVib,setAlarmVib]=useState(10);
   const [alarmToneSec,setAlarmToneSec]=useState(5);
   const [alarmVibSec,setAlarmVibSec]=useState(10);
   const [editEvt,setEditEvt]=useState<any>(null);
@@ -157,6 +160,8 @@ export default function MatchReport(){
   useEffect(()=>{
     initSoundDefaults().then(()=>db.soundConfigs.toArray().then(setSoundCfgs));
     requestPersistentStorage();
+    // Load alarm config
+    try{const t=parseInt(localStorage.getItem("alarmTone")||"5");const v=parseInt(localStorage.getItem("alarmVib")||"10");setAlarmTone(t);setAlarmVib(v);try{Ringtones.setAlarmConfig({toneDuration:t,vibDuration:v});}catch(_){}}catch(_){}
     loadArchive();
   },[]);
 
@@ -190,7 +195,7 @@ export default function MatchReport(){
       hS, aS, htH, htA, evts, whistled, started, hOn, aOn, notes,
       pausedElapsed: pausedElapsedRef.current,
       runStart: runStartRef.current,
-      savedAt: Date.now(), alarmToneSec, alarmVibSec
+      alarmTone, alarmVib, savedAt: Date.now(), alarmToneSec, alarmVibSec
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(_) {}
   }
@@ -210,6 +215,8 @@ export default function MatchReport(){
       setHtH(s.htH); setHtA(s.htA); setEvts(s.evts);
       setWhistled(s.whistled); setStarted(s.started);
       setHOn(s.hOn); setAOn(s.aOn); setNotes(s.notes);
+      if(s.alarmTone!==undefined)setAlarmTone(s.alarmTone);
+      if(s.alarmVib!==undefined)setAlarmVib(s.alarmVib);
       if(s.alarmToneSec!==undefined)setAlarmToneSec(s.alarmToneSec);
       if(s.alarmVibSec!==undefined)setAlarmVibSec(s.alarmVibSec);
       pausedElapsedRef.current = s.pausedElapsed || 0;
@@ -557,6 +564,26 @@ export default function MatchReport(){
           ))}
         </div>
 
+
+        <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:\`1px solid \${C.bdr}\`}}>
+          <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Volume2 size={14} style={{verticalAlign:"middle",marginRight:6}}/>Alarm bei Halbzeit/Spielende</div>
+          <div style={{marginBottom:14}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:14}}>Signalton-Dauer</span>
+              <span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:alarmTone===0?C.red:C.grn}}>{alarmTone}s</span>
+            </div>
+            <input type="range" min="0" max="120" step="5" value={alarmTone} onChange={(e:any)=>{const v=parseInt(e.target.value);setAlarmTone(v);localStorage.setItem("alarmTone",String(v));try{Ringtones.setAlarmConfig({toneDuration:v,vibDuration:alarmVib});}catch(_){}}} style={{width:"100%",accentColor:C.grn}}/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.txd}}><span>Aus</span><span>30s</span><span>60s</span><span>90s</span><span>120s</span></div>
+          </div>
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <span style={{fontSize:14}}>Vibrations-Dauer</span>
+              <span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:alarmVib===0?C.red:C.grn}}>{alarmVib}s</span>
+            </div>
+            <input type="range" min="0" max="120" step="5" value={alarmVib} onChange={(e:any)=>{const v=parseInt(e.target.value);setAlarmVib(v);localStorage.setItem("alarmVib",String(v));try{Ringtones.setAlarmConfig({toneDuration:alarmTone,vibDuration:v});}catch(_){}}} style={{width:"100%",accentColor:C.grn}}/>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.txd}}><span>Aus</span><span>30s</span><span>60s</span><span>90s</span><span>120s</span></div>
+          </div>
+        </div>
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Shirt size={14} style={{verticalAlign:"middle",marginRight:6}}/>Mannschaften</div>
           <div style={{marginBottom:12}}><label style={{fontSize:12,color:C.txd,display:"block",marginBottom:4}}>Heimmannschaft</label><input value={ht} onChange={(e:any)=>setHt(e.target.value)} placeholder="z.B. JSG Prümer Land" style={inp}/></div>
