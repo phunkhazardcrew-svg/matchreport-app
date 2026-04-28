@@ -342,7 +342,7 @@ export default function MatchReport(){
           <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
-        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.4 • Offline-fähig</div>
+        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.5 • Offline-fähig</div>
       </div>
     </div>);
   }
