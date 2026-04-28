@@ -17,11 +17,14 @@ function fmt(sec:number){const m=Math.floor(Math.abs(sec)/60);const s=Math.abs(s
 
 function playWebTone(freq=3200){playPresetById('goal-fanfare');}
 
-function scheduleHalftimeAlarm(remainingSeconds: number) {
-  try{Ringtones.setAlarmConfig({toneDuration:alarmTone,vibDuration:alarmVib});}catch(_){}
+function saveAlarmConfig(toneSec:number, vibSec:number) {
+  localStorage.setItem("alarm_config",JSON.stringify({toneSec,vibSec}));
+}
+
+function scheduleHalftimeAlarm(remainingSeconds: number, toneSec = 5, vibSec = 60) {
   try {
     const triggerAt = Date.now() + (remainingSeconds * 1000);
-    Ringtones.scheduleAlarm({ triggerAt, toneDuration: alarmToneSec, vibDuration: alarmVibSec });
+    Ringtones.scheduleAlarm({ triggerAt, toneDuration: toneSec, vibDuration: vibSec });
   } catch(_) {}
 }
 function cancelHalftimeAlarm() {
@@ -142,13 +145,7 @@ export default function MatchReport(){
   const [expandCat,setExpandCat]=useState<string|null>(null);
   const [addMin,setAddMin]=useState("");
   const [addHalf2,setAddHalf2]=useState(1);
-  const [alarmTone,setAlarmTone]=useState(5);
-  const [alarmVib,setAlarmVib]=useState(10);
-  const [alarmToneSec,setAlarmToneSec]=useState(5);
-  const [alarmVibSec,setAlarmVibSec]=useState(10);
   const [editEvt,setEditEvt]=useState<any>(null);
-  const [alarmTone,setAlarmTone]=useState(()=>parseInt(localStorage.getItem("alarmTone")||"10"));
-  const [alarmVib,setAlarmVib]=useState(()=>parseInt(localStorage.getItem("alarmVib")||"60"));
   const [scoreFlash,setScoreFlash]=useState("");
   const [confirmAction,setConfirmAction]=useState<{title:string,text:string,onOk:()=>void}|null>(null);
   const tmr=useRef<any>(null);
@@ -161,7 +158,6 @@ export default function MatchReport(){
     initSoundDefaults().then(()=>db.soundConfigs.toArray().then(setSoundCfgs));
     requestPersistentStorage();
     // Load alarm config
-    try{const t=parseInt(localStorage.getItem("alarmTone")||"5");const v=parseInt(localStorage.getItem("alarmVib")||"10");setAlarmTone(t);setAlarmVib(v);try{Ringtones.setAlarmConfig({toneDuration:t,vibDuration:v});}catch(_){}}catch(_){}
     loadArchive();
   },[]);
 
@@ -181,10 +177,8 @@ export default function MatchReport(){
 
 
   // Save alarm config
-  useEffect(()=>{try{localStorage.setItem('matchreport_alarm_cfg',JSON.stringify({tone:alarmToneSec,vib:alarmVibSec}));}catch(_){}},[alarmToneSec,alarmVibSec]);
 
   // === STATE PERSISTENCE: Survive app kill ===
-  useEffect(()=>{localStorage.setItem("alarmTone",String(alarmTone));localStorage.setItem("alarmVib",String(alarmVib));},[alarmTone,alarmVib]);
 
   const SAVE_KEY = 'matchreport_game_state';
 
@@ -195,7 +189,6 @@ export default function MatchReport(){
       hS, aS, htH, htA, evts, whistled, started, hOn, aOn, notes,
       pausedElapsed: pausedElapsedRef.current,
       runStart: runStartRef.current,
-      alarmTone, alarmVib, savedAt: Date.now(), alarmToneSec, alarmVibSec
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(_) {}
   }
@@ -208,17 +201,13 @@ export default function MatchReport(){
       if (!s.started) return false;
       // Only restore if saved less than 6 hours ago
       if (Date.now() - s.savedAt > 6 * 60 * 60 * 1000) { localStorage.removeItem(SAVE_KEY); return false; }
-      setHd(s.hd); setPc(s.pc); setHt(s.ht); setAt(s.at);
+      setHd(s.hd); setPc(s.pc); if(s.alarmToneSec!=null)setToneDur(s.alarmToneSec); if(s.alarmVibSec!=null)setVibDur(s.alarmVibSec); setHt(s.ht); setAt(s.at);
       setHp(s.hp); setAp(s.ap); setHalf(s.half); setTl(s.tl);
       setPau(true); // Always restore paused
       setIsOt(s.isOt); setOtS(s.otS); setHS(s.hS); setAS(s.aS);
       setHtH(s.htH); setHtA(s.htA); setEvts(s.evts);
       setWhistled(s.whistled); setStarted(s.started);
       setHOn(s.hOn); setAOn(s.aOn); setNotes(s.notes);
-      if(s.alarmTone!==undefined)setAlarmTone(s.alarmTone);
-      if(s.alarmVib!==undefined)setAlarmVib(s.alarmVib);
-      if(s.alarmToneSec!==undefined)setAlarmToneSec(s.alarmToneSec);
-      if(s.alarmVibSec!==undefined)setAlarmVibSec(s.alarmVibSec);
       pausedElapsedRef.current = s.pausedElapsed || 0;
       runStartRef.current = 0; // Will be set on resume
       setScreen('game');
@@ -233,7 +222,6 @@ export default function MatchReport(){
   // Restore on mount
   useEffect(() => {
     restoreGameState();
-    try{const s=localStorage.getItem('matchreport_alarm_cfg');if(s){const c=JSON.parse(s);setAlarmToneSec(c.tone||5);setAlarmVibSec(c.vib||10);}}catch(_){}
   }, []);
 
   // Auto-save every 2 seconds when game is active
@@ -289,7 +277,7 @@ export default function MatchReport(){
   function applyCSV(t:string){const r=parseCSV(t);if(r){if(r.homeTeam)setHt(r.homeTeam);if(r.awayTeam)setAt(r.awayTeam);if(r.homePlayers.length)setHp(r.homePlayers);if(r.awayPlayers.length)setAp(r.awayPlayers);flash("ok");return true;}flash("err");return false;}
   function onFile(e:any){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>applyCSV(ev.target?.result as string);r.readAsText(f);e.target.value="";}
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
-  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}scheduleHalftimeAlarm(tl||hd*60);}
+  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}scheduleHalftimeAlarm(tl||hd*60,alarmToneSec,alarmVibSec);}
   function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);pausedElapsedRef.current=0;runStartRef.current=0;cancelHalftimeAlarm();setModal(null);}
   function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);navTo("review");}
 
@@ -550,9 +538,7 @@ export default function MatchReport(){
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Clock size={14} style={{verticalAlign:"middle",marginRight:6}}/>Spielparameter</div>
-          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},          {l:"Signalton (Sek.)",v:`${alarmToneSec}s`,d:()=>setAlarmToneSec(x=>Math.max(0,x-5)),i:()=>setAlarmToneSec(x=>Math.min(120,x+5))},
-            {l:"Vibration (Sek.)",v:`${alarmVibSec}s`,d:()=>setAlarmVibSec(x=>Math.max(0,x-5)),i:()=>setAlarmVibSec(x=>Math.min(120,x+5))},
-            {l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))}].map(({l,v,d,i})=>(
+          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},{l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))}].map(({l,v,d,i})=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <span style={{fontSize:14}}>{l}</span>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -564,26 +550,6 @@ export default function MatchReport(){
           ))}
         </div>
 
-
-        <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:\`1px solid \${C.bdr}\`}}>
-          <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Volume2 size={14} style={{verticalAlign:"middle",marginRight:6}}/>Alarm bei Halbzeit/Spielende</div>
-          <div style={{marginBottom:14}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:14}}>Signalton-Dauer</span>
-              <span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:alarmTone===0?C.red:C.grn}}>{alarmTone}s</span>
-            </div>
-            <input type="range" min="0" max="120" step="5" value={alarmTone} onChange={(e:any)=>{const v=parseInt(e.target.value);setAlarmTone(v);localStorage.setItem("alarmTone",String(v));try{Ringtones.setAlarmConfig({toneDuration:v,vibDuration:alarmVib});}catch(_){}}} style={{width:"100%",accentColor:C.grn}}/>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.txd}}><span>Aus</span><span>30s</span><span>60s</span><span>90s</span><span>120s</span></div>
-          </div>
-          <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-              <span style={{fontSize:14}}>Vibrations-Dauer</span>
-              <span style={{fontSize:16,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",color:alarmVib===0?C.red:C.grn}}>{alarmVib}s</span>
-            </div>
-            <input type="range" min="0" max="120" step="5" value={alarmVib} onChange={(e:any)=>{const v=parseInt(e.target.value);setAlarmVib(v);localStorage.setItem("alarmVib",String(v));try{Ringtones.setAlarmConfig({toneDuration:alarmTone,vibDuration:v});}catch(_){}}} style={{width:"100%",accentColor:C.grn}}/>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:C.txd}}><span>Aus</span><span>30s</span><span>60s</span><span>90s</span><span>120s</span></div>
-          </div>
-        </div>
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Shirt size={14} style={{verticalAlign:"middle",marginRight:6}}/>Mannschaften</div>
           <div style={{marginBottom:12}}><label style={{fontSize:12,color:C.txd,display:"block",marginBottom:4}}>Heimmannschaft</label><input value={ht} onChange={(e:any)=>setHt(e.target.value)} placeholder="z.B. JSG Prümer Land" style={inp}/></div>
@@ -664,7 +630,7 @@ export default function MatchReport(){
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:4}}>
           {!run&&!pau&&<Btn color={C.grn} onClick={startT}><Play size={18}/> Start</Btn>}
           {run&&!pau&&<div style={{display:"flex",gap:12}}><Btn color={C.yel} onClick={()=>{setPau(true);cancelHalftimeAlarm();}}><Pause size={18}/> Pause</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
-          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);const remaining=tl||0;if(remaining>0)scheduleHalftimeAlarm(remaining);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
+          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);const remaining=tl||0;if(remaining>0)scheduleHalftimeAlarm(remaining,alarmToneSec,alarmVibSec);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
         </div>
       </div>
 
