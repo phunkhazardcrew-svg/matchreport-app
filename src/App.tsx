@@ -24,7 +24,7 @@ function saveAlarmConfig(toneSec:number, vibSec:number) {
 function scheduleHalftimeAlarm(remainingSeconds: number, toneSec = 5, vibSec = 60) {
   try {
     const triggerAt = Date.now() + (remainingSeconds * 1000);
-    Ringtones.scheduleAlarm({ triggerAt });
+    Ringtones.scheduleAlarm({ triggerAt, toneDuration: toneSec, vibDuration: vibSec });
   } catch(_) {}
 }
 function cancelHalftimeAlarm() {
@@ -105,6 +105,8 @@ export default function MatchReport(){
   const [screen,setScreen]=useState("home");
   const [hd,setHd]=useState(20);
   const [pc,setPc]=useState(7);
+  const [toneDur,setToneDur]=useState(5);
+  const [vibDur,setVibDur]=useState(60);
   const [ht,setHt]=useState("");
   const [at,setAt]=useState("");
   const [hp,setHp]=useState<any[]>([]);
@@ -185,7 +187,7 @@ export default function MatchReport(){
   function saveGameState() {
     if (!started) return;
     const state = {
-      screen, hd, pc, ht, at, hp, ap, half, tl, run, pau, isOt, otS,
+      screen, hd, pc, toneDur, vibDur, ht, at, hp, ap, half, tl, run, pau, isOt, otS,
       hS, aS, htH, htA, evts, whistled, started, hOn, aOn, notes,
       pausedElapsed: pausedElapsedRef.current,
       runStart: runStartRef.current,
@@ -201,7 +203,7 @@ export default function MatchReport(){
       if (!s.started) return false;
       // Only restore if saved less than 6 hours ago
       if (Date.now() - s.savedAt > 6 * 60 * 60 * 1000) { localStorage.removeItem(SAVE_KEY); return false; }
-      setHd(s.hd); setPc(s.pc); if(s.alarmToneSec!=null)setToneDur(s.alarmToneSec); if(s.alarmVibSec!=null)setVibDur(s.alarmVibSec); setHt(s.ht); setAt(s.at);
+      setHd(s.hd); setPc(s.pc); if(s.toneDur!=null)setToneDur(s.toneDur); if(s.vibDur!=null)setVibDur(s.vibDur); if(s.alarmToneSec!=null)setToneDur(s.alarmToneSec); if(s.alarmVibSec!=null)setVibDur(s.alarmVibSec); setHt(s.ht); setAt(s.at);
       setHp(s.hp); setAp(s.ap); setHalf(s.half); setTl(s.tl);
       setPau(true); // Always restore paused
       setIsOt(s.isOt); setOtS(s.otS); setHS(s.hS); setAS(s.aS);
@@ -232,7 +234,7 @@ export default function MatchReport(){
     const onVis = () => { if (document.visibilityState === 'hidden') saveGameState(); };
     document.addEventListener('visibilitychange', onVis);
     return () => { clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
-  }, [started, screen, hd, pc, ht, at, half, tl, run, pau, isOt, otS, hS, aS, htH, htA, evts, whistled, hOn, aOn, notes]);
+  }, [started, screen, hd, pc, toneDur, vibDur, ht, at, half, tl, run, pau, isOt, otS, hS, aS, htH, htA, evts, whistled, hOn, aOn, notes]);
 
   async function loadArchive(){const m=await db.matches.orderBy('createdAt').reverse().toArray();setArchivedMatches(m);}
   async function loadSounds(){const s=await db.soundConfigs.toArray();setSoundCfgs(s);}
@@ -538,7 +540,7 @@ export default function MatchReport(){
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Clock size={14} style={{verticalAlign:"middle",marginRight:6}}/>Spielparameter</div>
-          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},{l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))}].map(({l,v,d,i})=>(
+          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},{l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))},{l:"Signalton (Sek.)",v:`${toneDur}s`,d:()=>setToneDur(x=>Math.max(0,x-5)),i:()=>setToneDur(x=>Math.min(120,x+5))},{l:"Vibration (Sek.)",v:`${vibDur}s`,d:()=>setVibDur(x=>Math.max(0,x-5)),i:()=>setVibDur(x=>Math.min(120,x+5))}].map(({l,v,d,i})=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <span style={{fontSize:14}}>{l}</span>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
