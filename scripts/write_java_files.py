@@ -81,6 +81,17 @@ public class RingtonePlugin extends Plugin {
     }
 
     @PluginMethod
+    public void setAlarmConfig(PluginCall call) {
+        int toneSec = call.getInt("toneSec", 5);
+        int vibSec = call.getInt("vibSec", 5);
+        try {
+            getContext().getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE)
+                .edit().putInt("toneDuration", toneSec).putInt("vibDuration", vibSec).apply();
+        } catch (Exception e) { }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void scheduleAlarm(PluginCall call) {
         double triggerAt = call.getDouble("triggerAt", 0.0);
         if (triggerAt <= 0) { call.reject("Missing triggerAt"); return; }
