@@ -24,7 +24,7 @@ function saveAlarmConfig(toneSec:number, vibSec:number) {
 function scheduleHalftimeAlarm(remainingSeconds: number, toneSec = 5, vibSec = 60) {
   try {
     const triggerAt = Date.now() + (remainingSeconds * 1000);
-    Ringtones.scheduleAlarm({ triggerAt, toneDuration: toneSec, vibDuration: vibSec });
+    Ringtones.scheduleAlarm({ triggerAt });
   } catch(_) {}
 }
 function cancelHalftimeAlarm() {
