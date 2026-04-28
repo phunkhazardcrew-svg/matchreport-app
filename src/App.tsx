@@ -20,7 +20,7 @@ function playWebTone(freq=3200){playPresetById('goal-fanfare');}
 function scheduleHalftimeAlarm(remainingSeconds: number) {
   try {
     const triggerAt = Date.now() + (remainingSeconds * 1000);
-    Ringtones.scheduleAlarm({ triggerAt });
+    Ringtones.scheduleAlarm({ triggerAt, toneDuration: alarmToneSec, vibDuration: alarmVibSec });
   } catch(_) {}
 }
 function cancelHalftimeAlarm() {
@@ -141,7 +141,11 @@ export default function MatchReport(){
   const [expandCat,setExpandCat]=useState<string|null>(null);
   const [addMin,setAddMin]=useState("");
   const [addHalf2,setAddHalf2]=useState(1);
+  const [alarmToneSec,setAlarmToneSec]=useState(5);
+  const [alarmVibSec,setAlarmVibSec]=useState(10);
   const [editEvt,setEditEvt]=useState<any>(null);
+  const [alarmTone,setAlarmTone]=useState(()=>parseInt(localStorage.getItem("alarmTone")||"10"));
+  const [alarmVib,setAlarmVib]=useState(()=>parseInt(localStorage.getItem("alarmVib")||"60"));
   const [scoreFlash,setScoreFlash]=useState("");
   const [confirmAction,setConfirmAction]=useState<{title:string,text:string,onOk:()=>void}|null>(null);
   const tmr=useRef<any>(null);
@@ -171,7 +175,12 @@ export default function MatchReport(){
   },[]);
 
 
+  // Save alarm config
+  useEffect(()=>{try{localStorage.setItem('matchreport_alarm_cfg',JSON.stringify({tone:alarmToneSec,vib:alarmVibSec}));}catch(_){}},[alarmToneSec,alarmVibSec]);
+
   // === STATE PERSISTENCE: Survive app kill ===
+  useEffect(()=>{localStorage.setItem("alarmTone",String(alarmTone));localStorage.setItem("alarmVib",String(alarmVib));},[alarmTone,alarmVib]);
+
   const SAVE_KEY = 'matchreport_game_state';
 
   function saveGameState() {
@@ -181,7 +190,7 @@ export default function MatchReport(){
       hS, aS, htH, htA, evts, whistled, started, hOn, aOn, notes,
       pausedElapsed: pausedElapsedRef.current,
       runStart: runStartRef.current,
-      savedAt: Date.now()
+      savedAt: Date.now(), alarmToneSec, alarmVibSec
     };
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(_) {}
   }
@@ -201,6 +210,8 @@ export default function MatchReport(){
       setHtH(s.htH); setHtA(s.htA); setEvts(s.evts);
       setWhistled(s.whistled); setStarted(s.started);
       setHOn(s.hOn); setAOn(s.aOn); setNotes(s.notes);
+      if(s.alarmToneSec!==undefined)setAlarmToneSec(s.alarmToneSec);
+      if(s.alarmVibSec!==undefined)setAlarmVibSec(s.alarmVibSec);
       pausedElapsedRef.current = s.pausedElapsed || 0;
       runStartRef.current = 0; // Will be set on resume
       setScreen('game');
@@ -213,7 +224,10 @@ export default function MatchReport(){
   }
 
   // Restore on mount
-  useEffect(() => { restoreGameState(); }, []);
+  useEffect(() => {
+    restoreGameState();
+    try{const s=localStorage.getItem('matchreport_alarm_cfg');if(s){const c=JSON.parse(s);setAlarmToneSec(c.tone||5);setAlarmVibSec(c.vib||10);}}catch(_){}
+  }, []);
 
   // Auto-save every 2 seconds when game is active
   useEffect(() => {
@@ -331,7 +345,7 @@ export default function MatchReport(){
           <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
-        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.2 • Offline-fähig</div>
+        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.3 • Offline-fähig</div>
       </div>
     </div>);
   }
@@ -529,7 +543,9 @@ export default function MatchReport(){
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Clock size={14} style={{verticalAlign:"middle",marginRight:6}}/>Spielparameter</div>
-          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},{l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))}].map(({l,v,d,i})=>(
+          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},          {l:"Signalton (Sek.)",v:`${alarmToneSec}s`,d:()=>setAlarmToneSec(x=>Math.max(0,x-5)),i:()=>setAlarmToneSec(x=>Math.min(120,x+5))},
+            {l:"Vibration (Sek.)",v:`${alarmVibSec}s`,d:()=>setAlarmVibSec(x=>Math.max(0,x-5)),i:()=>setAlarmVibSec(x=>Math.min(120,x+5))},
+            {l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))}].map(({l,v,d,i})=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <span style={{fontSize:14}}>{l}</span>
               <div style={{display:"flex",alignItems:"center",gap:10}}>

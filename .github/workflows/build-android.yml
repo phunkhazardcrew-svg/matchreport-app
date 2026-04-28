@@ -34,18 +34,18 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Matchreport-v3.2.apk
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/Matchreport-v3.3.apk
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: matchreport-debug-apk
-          path: android/app/build/outputs/apk/debug/Matchreport-v3.2.apk
+          path: android/app/build/outputs/apk/debug/Matchreport-v3.3.apk
           retention-days: 30
       - name: Create or update Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v3.2
-          name: Matchreport v3.2
+          tag_name: v3.3
+          name: Matchreport v3.3
           body: |
             ## ⚽ Matchreport v3.0
 
@@ -60,7 +60,7 @@ jobs:
             1. APK herunterladen
             2. Auf Android-Gerät öffnen → Installieren
             3. Ggf. unbekannte Quellen erlauben
-          files: android/app/build/outputs/apk/debug/Matchreport-v3.2.apk
+          files: android/app/build/outputs/apk/debug/Matchreport-v3.3.apk
           make_latest: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
