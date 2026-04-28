@@ -1,0 +1,251 @@
+import os
+
+D = "android/app/src/main/java/com/matchreport/app/ringtones"
+
+# RingtonePlugin.java
+with open(f"{D}/RingtonePlugin.java", "w") as f:
+    f.write(
+        'package com.matchreport.app.ringtones;\n\n'
+        'import android.app.AlarmManager;\n'
+        'import android.app.PendingIntent;\n'
+        'import android.content.ContentUris;\n'
+        'import android.content.Context;\n'
+        'import android.content.Intent;\n'
+        'import android.database.Cursor;\n'
+        'import android.media.AudioManager;\n'
+        'import android.media.Ringtone;\n'
+        'import android.media.RingtoneManager;\n'
+        'import android.media.ToneGenerator;\n'
+        'import android.net.Uri;\n'
+        'import android.os.Build;\n'
+        'import android.os.Handler;\n'
+        'import android.os.Looper;\n'
+        'import com.getcapacitor.*;\n'
+        'import com.getcapacitor.annotation.CapacitorPlugin;\n\n'
+        '@CapacitorPlugin(name = "Ringtones")\n'
+        'public class RingtonePlugin extends Plugin {\n'
+        '    private Ringtone currentRingtone = null;\n\n'
+        '    @PluginMethod\n'
+        '    public void list(PluginCall call) {\n'
+        '        JSArray arr = new JSArray();\n'
+        '        try {\n'
+        '            RingtoneManager mgr = new RingtoneManager(getContext());\n'
+        '            mgr.setType(RingtoneManager.TYPE_ALL);\n'
+        '            Cursor cursor = mgr.getCursor();\n'
+        '            while (cursor.moveToNext()) {\n'
+        '                String title = cursor.getString(RingtoneManager.TITLE_COLUMN_INDEX);\n'
+        '                String baseUri = cursor.getString(RingtoneManager.URI_COLUMN_INDEX);\n'
+        '                long id = cursor.getLong(RingtoneManager.ID_COLUMN_INDEX);\n'
+        '                JSObject obj = new JSObject();\n'
+        '                obj.put("title", title);\n'
+        '                obj.put("uri", ContentUris.withAppendedId(Uri.parse(baseUri), id).toString());\n'
+        '                arr.put(obj);\n'
+        '            }\n'
+        '        } catch (Exception e) { }\n'
+        '        JSObject ret = new JSObject();\n'
+        '        ret.put("ringtones", arr);\n'
+        '        call.resolve(ret);\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void play(PluginCall call) {\n'
+        '        String uriStr = call.getString("uri");\n'
+        '        if (uriStr == null) { call.reject("Missing uri"); return; }\n'
+        '        try {\n'
+        '            if (currentRingtone != null) currentRingtone.stop();\n'
+        '            currentRingtone = RingtoneManager.getRingtone(getContext(), Uri.parse(uriStr));\n'
+        '            if (currentRingtone != null) currentRingtone.play();\n'
+        '        } catch (Exception e) { }\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void stop(PluginCall call) {\n'
+        '        try { if (currentRingtone != null) currentRingtone.stop(); } catch (Exception e) { }\n'
+        '        currentRingtone = null;\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void playLoud(PluginCall call) {\n'
+        '        try {\n'
+        '            ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_ALARM, 100);\n'
+        '            tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 1500);\n'
+        '            new Handler(Looper.getMainLooper()).postDelayed(tg::release, 2000);\n'
+        '        } catch (Exception e) { }\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void scheduleAlarm(PluginCall call) {\n'
+        '        double triggerAt = call.getDouble("triggerAt", 0.0);\n'
+        '        if (triggerAt <= 0) { call.reject("Missing triggerAt"); return; }\n'
+        '        try {\n'
+        '            AlarmManager am = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);\n'
+        '            Intent intent = new Intent(getContext(), AlarmReceiver.class);\n'
+        '            PendingIntent pi = PendingIntent.getBroadcast(getContext(), 9999, intent,\n'
+        '                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);\n'
+        '            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {\n'
+        '                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, (long) triggerAt, pi);\n'
+        '            } else {\n'
+        '                am.setExact(AlarmManager.RTC_WAKEUP, (long) triggerAt, pi);\n'
+        '            }\n'
+        '        } catch (Exception e) { }\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void cancelAlarm(PluginCall call) {\n'
+        '        try {\n'
+        '            AlarmManager am = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);\n'
+        '            Intent intent = new Intent(getContext(), AlarmReceiver.class);\n'
+        '            PendingIntent pi = PendingIntent.getBroadcast(getContext(), 9999, intent,\n'
+        '                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);\n'
+        '            am.cancel(pi);\n'
+        '        } catch (Exception e) { }\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void startGame(PluginCall call) {\n'
+        '        try {\n'
+        '            Intent intent = new Intent(getContext(), MatchForegroundService.class);\n'
+        '            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n'
+        '                getContext().startForegroundService(intent);\n'
+        '            } else { getContext().startService(intent); }\n'
+        '        } catch (Exception e) { }\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void stopGame(PluginCall call) {\n'
+        '        try { getContext().stopService(new Intent(getContext(), MatchForegroundService.class)); }\n'
+        '        catch (Exception e) { }\n'
+        '        call.resolve();\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void pick(PluginCall call) {\n'
+        '        JSObject ret = new JSObject();\n'
+        '        ret.put("uri", (String) null);\n'
+        '        ret.put("cancelled", true);\n'
+        '        call.resolve(ret);\n'
+        '    }\n\n'
+        '    @PluginMethod\n'
+        '    public void getDefault(PluginCall call) {\n'
+        '        JSObject ret = new JSObject();\n'
+        '        try {\n'
+        '            Uri uri = RingtoneManager.getActualDefaultRingtoneUri(getContext(), RingtoneManager.TYPE_NOTIFICATION);\n'
+        '            ret.put("uri", uri != null ? uri.toString() : null);\n'
+        '        } catch (Exception e) { ret.put("uri", (String) null); }\n'
+        '        call.resolve(ret);\n'
+        '    }\n'
+        '}\n'
+    )
+print("1/5 RingtonePlugin.java")
+
+# MatchForegroundService.java
+with open(f"{D}/MatchForegroundService.java", "w") as f:
+    f.write(
+        'package com.matchreport.app.ringtones;\n\n'
+        'import android.app.Notification;\n'
+        'import android.app.NotificationChannel;\n'
+        'import android.app.NotificationManager;\n'
+        'import android.app.PendingIntent;\n'
+        'import android.app.Service;\n'
+        'import android.content.Context;\n'
+        'import android.content.Intent;\n'
+        'import android.os.Build;\n'
+        'import android.os.IBinder;\n'
+        'import android.os.PowerManager;\n\n'
+        'public class MatchForegroundService extends Service {\n'
+        '    private PowerManager.WakeLock wakeLock;\n\n'
+        '    @Override\n'
+        '    public void onCreate() {\n'
+        '        super.onCreate();\n'
+        '        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n'
+        '            NotificationChannel ch = new NotificationChannel("matchreport_game", "Spieltimer", NotificationManager.IMPORTANCE_LOW);\n'
+        '            NotificationManager nm = getSystemService(NotificationManager.class);\n'
+        '            if (nm != null) nm.createNotificationChannel(ch);\n'
+        '        }\n'
+        '        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);\n'
+        '        if (pm != null) { wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "matchreport:game"); wakeLock.acquire(6*60*60*1000L); }\n'
+        '    }\n\n'
+        '    @Override\n'
+        '    public int onStartCommand(Intent intent, int flags, int startId) {\n'
+        '        Intent ni = getPackageManager().getLaunchIntentForPackage(getPackageName());\n'
+        '        PendingIntent pi = PendingIntent.getActivity(this, 0, ni, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);\n'
+        '        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {\n'
+        '            Notification n = new Notification.Builder(this, "matchreport_game")\n'
+        '                .setContentTitle("Matchreport").setContentText("Spiel laeuft")\n'
+        '                .setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(pi).setOngoing(true).build();\n'
+        '            startForeground(1001, n);\n'
+        '        }\n'
+        '        return START_STICKY;\n'
+        '    }\n\n'
+        '    @Override public void onDestroy() { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); super.onDestroy(); }\n'
+        '    @Override public IBinder onBind(Intent intent) { return null; }\n'
+        '}\n'
+    )
+print("2/5 MatchForegroundService.java")
+
+# AlarmReceiver.java
+with open(f"{D}/AlarmReceiver.java", "w") as f:
+    f.write(
+        'package com.matchreport.app.ringtones;\n\n'
+        'import android.content.BroadcastReceiver;\n'
+        'import android.content.Context;\n'
+        'import android.content.Intent;\n'
+        'import android.media.AudioManager;\n'
+        'import android.media.ToneGenerator;\n'
+        'import android.os.Handler;\n'
+        'import android.os.Looper;\n'
+        'import android.os.Vibrator;\n\n'
+        'public class AlarmReceiver extends BroadcastReceiver {\n'
+        '    @Override\n'
+        '    public void onReceive(Context context, Intent intent) {\n'
+        '        try {\n'
+        '            ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_ALARM, 100);\n'
+        '            tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500);\n'
+        '            new Handler(Looper.getMainLooper()).postDelayed(() -> tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500), 700);\n'
+        '            new Handler(Looper.getMainLooper()).postDelayed(() -> { tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 800); new Handler(Looper.getMainLooper()).postDelayed(tg::release, 1000); }, 1400);\n'
+        '        } catch (Exception e) { }\n'
+        '        try { Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE); if (v != null) v.vibrate(new long[]{0,300,200,300,200,500}, -1); } catch (Exception e) { }\n'
+        '    }\n'
+        '}\n'
+    )
+print("3/5 AlarmReceiver.java")
+
+# MainActivity
+path = "android/app/src/main/java/com/matchreport/app/MainActivity.java"
+if os.path.exists(path):
+    c = open(path).read()
+    if "RingtonePlugin" not in c:
+        c = c.replace("import com.getcapacitor.BridgeActivity;",
+            "import com.getcapacitor.BridgeActivity;\nimport com.matchreport.app.ringtones.RingtonePlugin;")
+        c = c.replace("public class MainActivity extends BridgeActivity {}",
+            "public class MainActivity extends BridgeActivity {\n"
+            "    @Override\n"
+            "    public void onCreate(android.os.Bundle savedInstanceState) {\n"
+            "        registerPlugin(RingtonePlugin.class);\n"
+            "        super.onCreate(savedInstanceState);\n"
+            "    }\n"
+            "}")
+        open(path, 'w').write(c)
+        print("4/5 MainActivity updated")
+    else:
+        print("4/5 MainActivity OK")
+
+# AndroidManifest
+path = "android/app/src/main/AndroidManifest.xml"
+if os.path.exists(path):
+    c = open(path).read()
+    if "FOREGROUND_SERVICE" not in c:
+        c = c.replace("<application",
+            '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
+            '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\n'
+            '    <uses-permission android:name="android.permission.WAKE_LOCK" />\n'
+            '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n'
+            '    <uses-permission android:name="android.permission.VIBRATE" />\n'
+            '    <application')
+    if "MatchForegroundService" not in c:
+        c = c.replace("</application>",
+            '        <service android:name="com.matchreport.app.ringtones.MatchForegroundService" '
+            'android:foregroundServiceType="mediaPlayback" android:exported="false" />\n'
+            '        <receiver android:name="com.matchreport.app.ringtones.AlarmReceiver" '
+            'android:exported="false" />\n'
+            '    </application>')
+    open(path, 'w').write(c)
+    print("5/5 AndroidManifest updated")
