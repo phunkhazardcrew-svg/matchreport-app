@@ -3,16 +3,19 @@ import os
 D = "android/app/src/main/java/com/matchreport/app/ringtones"
 
 ###############################################
-# 1. RingtonePlugin.java
+# 1/3 RingtonePlugin.java
+# - setAlarmClock() (Maßnahme 1)
+# - setAlarmConfig (configurable durations)
+# - startGame/stopGame (ForegroundService)
+# - requestBatteryExempt (Maßnahme 4)
 ###############################################
-PLUGIN = """package com.matchreport.app.ringtones;
+PLUGIN = '''package com.matchreport.app.ringtones;
 
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.media.AudioManager;
 import android.media.Ringtone;
@@ -22,11 +25,14 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
+
 import com.getcapacitor.*;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "Ringtones")
 public class RingtonePlugin extends Plugin {
+
     private Ringtone currentRingtone = null;
 
     @PluginMethod
@@ -80,36 +86,41 @@ public class RingtonePlugin extends Plugin {
         call.resolve();
     }
 
+    // Maßnahme 4: Save alarm tone/vibration duration config
     @PluginMethod
     public void setAlarmConfig(PluginCall call) {
         int toneSec = call.getInt("toneSec", 5);
         int vibSec = call.getInt("vibSec", 5);
-        try {
-            getContext().getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE)
-                .edit().putInt("toneDuration", toneSec).putInt("vibDuration", vibSec).apply();
-        } catch (Exception e) { }
+        getContext().getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE)
+            .edit().putInt("toneSec", toneSec).putInt("vibSec", vibSec).apply();
         call.resolve();
     }
 
+    // Maßnahme 1: Use setAlarmClock() — highest priority alarm in Android
     @PluginMethod
     public void scheduleAlarm(PluginCall call) {
         double triggerAt = call.getDouble("triggerAt", 0.0);
         if (triggerAt <= 0) { call.reject("Missing triggerAt"); return; }
-        int toneDur = call.getInt("toneDuration", 5);
-        int vibDur = call.getInt("vibDuration", 60);
-        // Save durations so AlarmReceiver can read them
-        getContext().getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE)
-            .edit().putInt("toneDuration", toneDur).putInt("vibDuration", vibDur).apply();
         try {
             AlarmManager am = (AlarmManager) getContext().getSystemService(Context.ALARM_SERVICE);
             Intent intent = new Intent(getContext(), AlarmReceiver.class);
-            PendingIntent pi = PendingIntent.getBroadcast(getContext(), 9999, intent,
+            PendingIntent alarmPi = PendingIntent.getBroadcast(getContext(), 9999, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, (long) triggerAt, pi);
-            } else {
-                am.setExact(AlarmManager.RTC_WAKEUP, (long) triggerAt, pi);
-            }
+
+            // Show intent: opens app when user taps alarm notification
+            Intent showIntent = getContext().getPackageManager().getLaunchIntentForPackage(getContext().getPackageName());
+            PendingIntent showPi = PendingIntent.getActivity(getContext(), 0, showIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+
+            // setAlarmClock = treated like a user-set alarm clock
+            // Android exits Doze mode BEFORE this alarm fires
+            // No manufacturer suppresses alarm clocks
+            AlarmManager.AlarmClockInfo alarmInfo = new AlarmManager.AlarmClockInfo((long) triggerAt, showPi);
+            am.setAlarmClock(alarmInfo, alarmPi);
+
+            // Also save trigger time so ForegroundService backup timer can use it
+            getContext().getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE)
+                .edit().putLong("triggerAt", (long) triggerAt).apply();
         } catch (Exception e) { }
         call.resolve();
     }
@@ -122,6 +133,9 @@ public class RingtonePlugin extends Plugin {
             PendingIntent pi = PendingIntent.getBroadcast(getContext(), 9999, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
             am.cancel(pi);
+            // Clear trigger time
+            getContext().getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE)
+                .edit().remove("triggerAt").apply();
         } catch (Exception e) { }
         call.resolve();
     }
@@ -144,6 +158,21 @@ public class RingtonePlugin extends Plugin {
         call.resolve();
     }
 
+    // Maßnahme 4: Request battery optimization exemption
+    @PluginMethod
+    public void requestBatteryExempt(PluginCall call) {
+        try {
+            android.os.PowerManager pm = (android.os.PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getContext().getPackageName())) {
+                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(Uri.parse("package:" + getContext().getPackageName()));
+                intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                getContext().startActivity(intent);
+            }
+        } catch (Exception e) { }
+        call.resolve();
+    }
+
     @PluginMethod
     public void pick(PluginCall call) {
         JSObject ret = new JSObject();
@@ -162,12 +191,19 @@ public class RingtonePlugin extends Plugin {
         call.resolve(ret);
     }
 }
-"""
+'''
+with open(f"{D}/RingtonePlugin.java", "w") as f:
+    f.write(PLUGIN)
+print("1/5 RingtonePlugin.java (setAlarmClock + requestBatteryExempt)")
+
 
 ###############################################
-# 2. MatchForegroundService.java
+# 2/3 MatchForegroundService.java
+# - Maßnahme 3: Own timer thread as backup
+# - WakeLock
+# - Permanent notification
 ###############################################
-SERVICE = """package com.matchreport.app.ringtones;
+SERVICE = '''package com.matchreport.app.ringtones;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -176,47 +212,151 @@ import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
+import android.content.SharedPreferences;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
 import android.os.Build;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.os.PowerManager;
+import android.os.Vibrator;
 
 public class MatchForegroundService extends Service {
     private PowerManager.WakeLock wakeLock;
+    private Handler timerHandler;
+    private Runnable timerRunnable;
+    private boolean alarmFired = false;
 
     @Override
     public void onCreate() {
         super.onCreate();
+        // Create notification channel
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel ch = new NotificationChannel("matchreport_game", "Spieltimer", NotificationManager.IMPORTANCE_LOW);
+            NotificationChannel ch = new NotificationChannel(
+                "matchreport_game", "Spieltimer", NotificationManager.IMPORTANCE_LOW);
+            ch.setDescription("Haelt den Timer am Laufen");
             NotificationManager nm = getSystemService(NotificationManager.class);
             if (nm != null) nm.createNotificationChannel(ch);
         }
+        // WakeLock: keep CPU alive (Maßnahme 2)
         PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        if (pm != null) { wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "matchreport:game"); wakeLock.acquire(6*60*60*1000L); }
+        if (pm != null) {
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "matchreport:game");
+            wakeLock.acquire(6 * 60 * 60 * 1000L); // Max 6 hours
+        }
+
+        // Maßnahme 3: Backup timer thread
+        // Checks every 5 seconds if alarm time has passed
+        // Fires alarm independently of AlarmManager + WebView
+        alarmFired = false;
+        timerHandler = new Handler(Looper.getMainLooper());
+        timerRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (!alarmFired) {
+                    SharedPreferences prefs = getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE);
+                    long triggerAt = prefs.getLong("triggerAt", 0);
+                    if (triggerAt > 0 && System.currentTimeMillis() >= triggerAt) {
+                        // Alarm time reached! Fire backup alarm
+                        alarmFired = true;
+                        fireBackupAlarm();
+                        prefs.edit().remove("triggerAt").apply();
+                    }
+                }
+                timerHandler.postDelayed(this, 5000); // Check every 5 seconds
+            }
+        };
+        timerHandler.postDelayed(timerRunnable, 5000);
+    }
+
+    private void fireBackupAlarm() {
+        SharedPreferences prefs = getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE);
+        int toneSec = prefs.getInt("toneSec", 5);
+        int vibSec = prefs.getInt("vibSec", 5);
+
+        // Maßnahme 5: Request audio focus to pause YouTube/Spotify/etc
+        AudioManager audioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audioMgr != null) {
+            audioMgr.requestAudioFocus(null, AudioManager.STREAM_ALARM, AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+        }
+
+        // Play alarm tone on STREAM_ALARM (bypasses silent mode)
+        if (toneSec > 0) {
+            try {
+                ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+                tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, toneSec * 1000);
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    tg.release();
+                    // Abandon audio focus after tone
+                    if (audioMgr != null) audioMgr.abandonAudioFocus(null);
+                }, (toneSec + 1) * 1000L);
+            } catch (Exception e) { }
+        }
+
+        // Vibrate
+        if (vibSec > 0) {
+            try {
+                Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+                if (v != null) {
+                    int cycles = (vibSec * 1000) / 800;
+                    long[] pattern = new long[cycles * 2 + 1];
+                    pattern[0] = 0;
+                    for (int i = 0; i < cycles * 2; i++) {
+                        pattern[i + 1] = (i % 2 == 0) ? 500 : 300;
+                    }
+                    v.vibrate(pattern, -1);
+                }
+            } catch (Exception e) { }
+        }
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        // Reset backup timer flag when service restarts
+        alarmFired = false;
+
         Intent ni = getPackageManager().getLaunchIntentForPackage(getPackageName());
-        PendingIntent pi = PendingIntent.getActivity(this, 0, ni, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        PendingIntent pi = PendingIntent.getActivity(this, 0, ni,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification n = new Notification.Builder(this, "matchreport_game")
-                .setContentTitle("Matchreport").setContentText("Spiel laeuft")
-                .setSmallIcon(android.R.drawable.ic_media_play).setContentIntent(pi).setOngoing(true).build();
+                .setContentTitle("Matchreport")
+                .setContentText("Spiel laeuft - Timer aktiv")
+                .setSmallIcon(android.R.drawable.ic_media_play)
+                .setContentIntent(pi)
+                .setOngoing(true)
+                .build();
             startForeground(1001, n);
         }
         return START_STICKY;
     }
 
-    @Override public void onDestroy() { if (wakeLock != null && wakeLock.isHeld()) wakeLock.release(); super.onDestroy(); }
-    @Override public IBinder onBind(Intent intent) { return null; }
+    @Override
+    public void onDestroy() {
+        if (timerHandler != null && timerRunnable != null) {
+            timerHandler.removeCallbacks(timerRunnable);
+        }
+        if (wakeLock != null && wakeLock.isHeld()) wakeLock.release();
+        super.onDestroy();
+    }
+
+    @Override
+    public IBinder onBind(Intent intent) { return null; }
 }
-"""
+'''
+with open(f"{D}/MatchForegroundService.java", "w") as f:
+    f.write(SERVICE)
+print("2/5 MatchForegroundService.java (backup timer + WakeLock)")
+
 
 ###############################################
-# 3. AlarmReceiver.java — reads durations from SharedPreferences
+# 3/3 AlarmReceiver.java
+# - Maßnahme 2: WakeLock
+# - Maßnahme 5: AudioFocus (pause YouTube etc)
+# - Configurable tone/vibration duration
 ###############################################
-RECEIVER = """package com.matchreport.app.ringtones;
+RECEIVER = '''package com.matchreport.app.ringtones;
 
 import android.content.BroadcastReceiver;
 import android.content.Context;
@@ -226,61 +366,95 @@ import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
 import android.os.Vibrator;
 
 public class AlarmReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        SharedPreferences prefs = context.getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE);
-        int toneSec = prefs.getInt("toneDuration", 5);
-        int vibSec = prefs.getInt("vibDuration", 60);
+        // Maßnahme 2: Acquire WakeLock to keep CPU alive during playback
+        PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        PowerManager.WakeLock wl = null;
+        if (pm != null) {
+            wl = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "matchreport:alarm");
+            wl.acquire(120 * 1000L); // Hold for max 120 seconds
+        }
 
-        // Play tone on STREAM_ALARM (bypasses silent mode)
+        // Read configured durations
+        SharedPreferences prefs = context.getSharedPreferences("matchreport_alarm", Context.MODE_PRIVATE);
+        int toneSec = prefs.getInt("toneSec", 5);
+        int vibSec = prefs.getInt("vibSec", 5);
+
+        // Maßnahme 5: Request audio focus — pauses YouTube, Spotify, voice recording
+        AudioManager audioMgr = (AudioManager) context.getSystemService(Context.AUDIO_SERVICE);
+        if (audioMgr != null) {
+            audioMgr.requestAudioFocus(null, AudioManager.STREAM_ALARM,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
+        }
+
+        // Play alarm tone on STREAM_ALARM (ignores silent/vibrate mode)
         if (toneSec > 0) {
             try {
                 ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
                 tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, toneSec * 1000);
-                new Handler(Looper.getMainLooper()).postDelayed(tg::release, (toneSec + 1) * 1000L);
-            } catch (Exception e) { }
+                final PowerManager.WakeLock finalWl = wl;
+                new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                    tg.release();
+                    // Abandon audio focus — YouTube/Spotify resume automatically
+                    if (audioMgr != null) audioMgr.abandonAudioFocus(null);
+                    // Release WakeLock
+                    if (finalWl != null && finalWl.isHeld()) finalWl.release();
+                }, (toneSec + 1) * 1000L);
+            } catch (Exception e) {
+                if (wl != null && wl.isHeld()) wl.release();
+            }
+        } else {
+            // No tone — release immediately after vibration
+            final PowerManager.WakeLock finalWl = wl;
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                if (audioMgr != null) audioMgr.abandonAudioFocus(null);
+                if (finalWl != null && finalWl.isHeld()) finalWl.release();
+            }, (vibSec + 1) * 1000L);
         }
 
-        // Vibrate with pattern
+        // Vibrate for configured duration (500ms on, 300ms off pattern)
         if (vibSec > 0) {
             try {
                 Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE);
                 if (v != null) {
-                    // Pattern: 500ms on, 300ms off, repeating for vibSec seconds
                     int cycles = (vibSec * 1000) / 800;
                     long[] pattern = new long[cycles * 2 + 1];
-                    pattern[0] = 0; // start immediately
-                    for (int i = 0; i < cycles; i++) {
-                        pattern[i * 2 + 1] = 500; // vibrate
-                        pattern[i * 2 + 2] = 300; // pause
+                    pattern[0] = 0;
+                    for (int i = 0; i < cycles * 2; i++) {
+                        pattern[i + 1] = (i % 2 == 0) ? 500 : 300;
                     }
                     v.vibrate(pattern, -1);
                 }
             } catch (Exception e) { }
         }
+
+        // Clear trigger time so backup timer doesn't double-fire
+        prefs.edit().remove("triggerAt").apply();
     }
 }
-"""
+'''
+with open(f"{D}/AlarmReceiver.java", "w") as f:
+    f.write(RECEIVER)
+print("3/5 AlarmReceiver.java (WakeLock + AudioFocus + configurable)")
 
-# Write all Java files
-open(f"{D}/RingtonePlugin.java", "w").write(PLUGIN)
-print("1/5 RingtonePlugin.java")
-open(f"{D}/MatchForegroundService.java", "w").write(SERVICE)
-print("2/5 MatchForegroundService.java")
-open(f"{D}/AlarmReceiver.java", "w").write(RECEIVER)
-print("3/5 AlarmReceiver.java")
 
-# 4. MainActivity
+###############################################
+# 4/5 Modify MainActivity.java
+###############################################
 path = "android/app/src/main/java/com/matchreport/app/MainActivity.java"
 if os.path.exists(path):
     c = open(path).read()
     if "RingtonePlugin" not in c:
-        c = c.replace("import com.getcapacitor.BridgeActivity;",
+        c = c.replace(
+            "import com.getcapacitor.BridgeActivity;",
             "import com.getcapacitor.BridgeActivity;\nimport com.matchreport.app.ringtones.RingtonePlugin;")
-        c = c.replace("public class MainActivity extends BridgeActivity {}",
+        c = c.replace(
+            "public class MainActivity extends BridgeActivity {}",
             "public class MainActivity extends BridgeActivity {\n"
             "    @Override\n"
             "    public void onCreate(android.os.Bundle savedInstanceState) {\n"
@@ -290,20 +464,29 @@ if os.path.exists(path):
             "}")
         open(path, 'w').write(c)
         print("4/5 MainActivity updated")
-    else: print("4/5 MainActivity OK")
+    else:
+        print("4/5 MainActivity already configured")
 
-# 5. AndroidManifest
+
+###############################################
+# 5/5 Modify AndroidManifest.xml
+###############################################
 path = "android/app/src/main/AndroidManifest.xml"
 if os.path.exists(path):
     c = open(path).read()
-    if "FOREGROUND_SERVICE" not in c:
-        c = c.replace("<application",
-            '<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />\n'
-            '    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />\n'
-            '    <uses-permission android:name="android.permission.WAKE_LOCK" />\n'
-            '    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n'
-            '    <uses-permission android:name="android.permission.VIBRATE" />\n'
-            '    <application')
+    perms_needed = [
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.WAKE_LOCK",
+        "android.permission.SCHEDULE_EXACT_ALARM",
+        "android.permission.USE_EXACT_ALARM",
+        "android.permission.VIBRATE",
+        "android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS",
+    ]
+    for perm in perms_needed:
+        if perm not in c:
+            c = c.replace("<application",
+                f'    <uses-permission android:name="{perm}" />\n<application')
     if "MatchForegroundService" not in c:
         c = c.replace("</application>",
             '        <service android:name="com.matchreport.app.ringtones.MatchForegroundService" '
@@ -312,4 +495,6 @@ if os.path.exists(path):
             'android:exported="false" />\n'
             '    </application>')
     open(path, 'w').write(c)
-    print("5/5 AndroidManifest updated")
+    print("5/5 AndroidManifest updated (all permissions)")
+
+print("\n=== All 5 measures implemented ===")

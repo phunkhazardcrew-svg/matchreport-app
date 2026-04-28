@@ -21,7 +21,7 @@ function saveAlarmConfig(toneSec:number, vibSec:number) {
   localStorage.setItem("alarm_config",JSON.stringify({toneSec,vibSec}));
 }
 
-function scheduleHalftimeAlarm(remainingSeconds: number, toneSec = 5, vibSec = 60) {
+function scheduleHalftimeAlarm(remainingSeconds: number) {
   try {
     const triggerAt = Date.now() + (remainingSeconds * 1000);
     Ringtones.scheduleAlarm({ triggerAt, toneDuration: toneSec, vibDuration: vibSec });
@@ -279,7 +279,7 @@ export default function MatchReport(){
   function applyCSV(t:string){const r=parseCSV(t);if(r){if(r.homeTeam)setHt(r.homeTeam);if(r.awayTeam)setAt(r.awayTeam);if(r.homePlayers.length)setHp(r.homePlayers);if(r.awayPlayers.length)setAp(r.awayPlayers);flash("ok");return true;}flash("err");return false;}
   function onFile(e:any){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>applyCSV(ev.target?.result as string);r.readAsText(f);e.target.value="";}
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
-  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}scheduleHalftimeAlarm(tl||hd*60,alarmToneSec,alarmVibSec);}
+  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;try{Ringtones.requestBatteryExempt();}catch(_){}}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}scheduleHalftimeAlarm(tl||hd*60);}
   function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);pausedElapsedRef.current=0;runStartRef.current=0;cancelHalftimeAlarm();setModal(null);}
   function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);navTo("review");}
 
@@ -342,7 +342,7 @@ export default function MatchReport(){
           <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
-        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.3 • Offline-fähig</div>
+        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.4 • Offline-fähig</div>
       </div>
     </div>);
   }
@@ -632,7 +632,7 @@ export default function MatchReport(){
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:4}}>
           {!run&&!pau&&<Btn color={C.grn} onClick={startT}><Play size={18}/> Start</Btn>}
           {run&&!pau&&<div style={{display:"flex",gap:12}}><Btn color={C.yel} onClick={()=>{setPau(true);cancelHalftimeAlarm();}}><Pause size={18}/> Pause</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
-          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);const remaining=tl||0;if(remaining>0)scheduleHalftimeAlarm(remaining,alarmToneSec,alarmVibSec);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
+          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);const remaining=tl||0;if(remaining>0)scheduleHalftimeAlarm(remaining);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
         </div>
       </div>
 
