@@ -540,7 +540,7 @@ export default function MatchReport(){
 
         <div style={{background:C.card,borderRadius:14,padding:18,marginBottom:14,border:`1px solid ${C.bdr}`}}>
           <div style={{fontSize:13,fontWeight:700,color:C.txd,textTransform:"uppercase",marginBottom:14}}><Clock size={14} style={{verticalAlign:"middle",marginRight:6}}/>Spielparameter</div>
-          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(5,x-5)),i:()=>setHd(x=>Math.min(45,x+5))},{l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))},{l:"Signalton (Sek.)",v:`${toneDur}s`,d:()=>setToneDur(x=>Math.max(0,x-5)),i:()=>setToneDur(x=>Math.min(120,x+5))},{l:"Vibration (Sek.)",v:`${vibDur}s`,d:()=>setVibDur(x=>Math.max(0,x-5)),i:()=>setVibDur(x=>Math.min(120,x+5))}].map(({l,v,d,i})=>(
+          {[{l:"Halbzeitdauer",v:`${hd} min`,d:()=>setHd(x=>Math.max(1,x-1)),i:()=>setHd(x=>Math.min(45,x+1))},{l:"Spieler (inkl. TW)",v:pc,d:()=>setPc(x=>Math.max(3,x-1)),i:()=>setPc(x=>Math.min(11,x+1))},{l:"Signalton (Sek.)",v:`${toneDur}s`,d:()=>setToneDur(x=>Math.max(0,x-5)),i:()=>setToneDur(x=>Math.min(120,x+5))},{l:"Vibration (Sek.)",v:`${vibDur}s`,d:()=>setVibDur(x=>Math.max(0,x-5)),i:()=>setVibDur(x=>Math.min(120,x+5))}].map(({l,v,d,i})=>(
             <div key={l} style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <span style={{fontSize:14}}>{l}</span>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
