@@ -225,8 +225,6 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.media.AudioAttributes;
-import android.media.AudioFocusRequest;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Build;
@@ -289,18 +287,8 @@ public class AlarmPlaybackService extends Service {
         // Request audio focus — PAUSES YouTube, Spotify, STT, everything
         AudioManager audioMgr = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
         if (audioMgr != null) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                AudioFocusRequest focusReq = new AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT)
-                    .setAudioAttributes(new AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build())
-                    .build();
-                audioMgr.requestAudioFocus(focusReq);
-            } else {
-                audioMgr.requestAudioFocus(null, AudioManager.STREAM_ALARM,
-                    AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
-            }
+            audioMgr.requestAudioFocus(null, AudioManager.STREAM_ALARM,
+                AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
         }
 
         // Play tone on STREAM_ALARM (ignores silent mode)
@@ -340,15 +328,8 @@ public class AlarmPlaybackService extends Service {
         // Auto-stop service after max(toneSec, vibSec) + 2 seconds
         int maxDuration = Math.max(toneSec, vibSec);
         handler.postDelayed(() -> {
-            // Abandon audio focus
-            if (audioMgr != null) {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                    // Just abandon with null — simple approach
-                    audioMgr.abandonAudioFocus(null);
-                } else {
-                    audioMgr.abandonAudioFocus(null);
-                }
-            }
+            // Abandon audio focus — YouTube/Spotify resume
+            if (audioMgr != null) audioMgr.abandonAudioFocus(null);
             stopSelf();
         }, (maxDuration + 2) * 1000L);
 
