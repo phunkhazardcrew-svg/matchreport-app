@@ -16,6 +16,17 @@ import { getPresetsForCategory, playPresetById, PRESETS } from './utils/soundPre
 function fmt(sec:number){const m=Math.floor(Math.abs(sec)/60);const s=Math.abs(sec)%60;return`${String(m).padStart(2,"0")}:${String(s).padStart(2,"0")}`;}
 
 function playWebTone(freq=3200){playPresetById('goal-fanfare');}
+
+function scheduleHalftimeAlarm(remainingSeconds: number) {
+  try {
+    const triggerAt = Date.now() + (remainingSeconds * 1000);
+    Ringtones.scheduleAlarm({ triggerAt });
+  } catch(_) {}
+}
+function cancelHalftimeAlarm() {
+  try { Ringtones.cancelAlarm(); } catch(_) {}
+}
+
 function vibrate(){try{navigator.vibrate?.([300,100,300]);}catch(_){}}
 
 function playEventSound(eventType:string){
@@ -257,8 +268,8 @@ export default function MatchReport(){
   function applyCSV(t:string){const r=parseCSV(t);if(r){if(r.homeTeam)setHt(r.homeTeam);if(r.awayTeam)setAt(r.awayTeam);if(r.homePlayers.length)setHp(r.homePlayers);if(r.awayPlayers.length)setAp(r.awayPlayers);flash("ok");return true;}flash("err");return false;}
   function onFile(e:any){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>applyCSV(ev.target?.result as string);r.readAsText(f);e.target.value="";}
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
-  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}}
-  function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);pausedElapsedRef.current=0;runStartRef.current=0;setModal(null);}
+  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}scheduleHalftimeAlarm(tl||hd*60);}
+  function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);pausedElapsedRef.current=0;runStartRef.current=0;cancelHalftimeAlarm();setModal(null);}
   function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);navTo("review");}
 
   function openAct(t:string,tm:string){setMT(tm);setMS(0);setMD({});setModal(t);}
@@ -269,7 +280,7 @@ export default function MatchReport(){
   function selSO(p:any){setMD({out:p});setMS(1);}
   function selSI(p:any){const fn=mT==="home"?setHOn:setAOn;fn(x=>x.filter(id=>id!==mD.out.id).concat(p.id));setEvts(x=>[...x,{type:"sub",half,outPlayer:mD.out,inPlayer:p,team:mT,id:`s-${Date.now()}`,displayTime:getDispMin()}]);playEventSound('sub');setModal(null);}
   function delEv(ev:any){setEvts(x=>x.filter(e=>e.id!==ev.id));if(ev.type==="goal"){const own=ev.goalType==="Eigentor";if(own){if(ev.team==="home")setAS(s=>Math.max(0,s-1));else setHS(s=>Math.max(0,s-1));}else{if(ev.team==="home")setHS(s=>Math.max(0,s-1));else setAS(s=>Math.max(0,s-1));}}}
-  function resetAll(){clearGameState();try{Ringtones.stopGame();}catch(_){}setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);screenHistory.current=["home"];setScreen("home");}
+  function resetAll(){clearGameState();cancelHalftimeAlarm();try{Ringtones.stopGame();}catch(_){}setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);screenHistory.current=["home"];setScreen("home");}
 
   async function saveMatchToArchive(){clearGameState();try{Ringtones.stopGame();}catch(_){}
     const match:Match={id:crypto.randomUUID(),homeTeam:ht,awayTeam:at,homePlayers:hp,awayPlayers:ap,homeScore:hS,awayScore:aS,htHomeScore:htH,htAwayScore:htA,halfDuration:hd,playerCount:pc,events:evts,notes,status:'finished',createdAt:Date.now(),updatedAt:Date.now()};
@@ -320,7 +331,7 @@ export default function MatchReport(){
           <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
-        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.1 • Offline-fähig</div>
+        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.2 • Offline-fähig</div>
       </div>
     </div>);
   }
@@ -609,8 +620,8 @@ export default function MatchReport(){
         <div style={{fontSize:isOt?28:48,fontWeight:800,fontFamily:"'JetBrains Mono',monospace",color:isOt?C.red:C.tx,padding:"8px 0"}}>{isOt?`${fmt(0)} +${fmt(otS)}`:fmt(tl??hd*60)}</div>
         <div style={{display:"flex",justifyContent:"center",gap:12,marginTop:4}}>
           {!run&&!pau&&<Btn color={C.grn} onClick={startT}><Play size={18}/> Start</Btn>}
-          {run&&!pau&&<div style={{display:"flex",gap:12}}><Btn color={C.yel} onClick={()=>setPau(true)}><Pause size={18}/> Pause</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
-          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
+          {run&&!pau&&<div style={{display:"flex",gap:12}}><Btn color={C.yel} onClick={()=>{setPau(true);cancelHalftimeAlarm();}}><Pause size={18}/> Pause</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
+          {pau&&<div style={{display:"flex",gap:12}}><Btn color={C.grn} onClick={()=>{runStartRef.current=Date.now();setPau(false);const remaining=tl||0;if(remaining>0)scheduleHalftimeAlarm(remaining);}}><Play size={18}/> Weiter</Btn><Btn color={C.red} onClick={()=>setModal(half===1?"ht":"ft")}><Square size={18}/> Stopp</Btn></div>}
         </div>
       </div>
 

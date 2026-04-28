@@ -3,6 +3,8 @@ export interface RingtonesPlugin {
   play(options: { uri: string }): Promise<void>;
   stop(): Promise<void>;
   playLoud(options?: { uri?: string }): Promise<void>;
+  scheduleAlarm(options: { triggerAt: number }): Promise<void>;
+  cancelAlarm(): Promise<void>;
   startGame(): Promise<void>;
   stopGame(): Promise<void>;
   pick(options?: { type?: string; title?: string; existingUri?: string }): Promise<{ uri: string | null; cancelled: boolean }>;

@@ -23,6 +23,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.app.PendingIntent;
 
 import com.getcapacitor.JSArray;
 import com.getcapacitor.JSObject;
@@ -83,6 +84,34 @@ public class RingtonePlugin extends Plugin {
             ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
             tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 1500);
             new Handler(Looper.getMainLooper()).postDelayed(tg::release, 2000);
+        } catch (Exception e) { }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void scheduleAlarm(PluginCall call) {
+        long triggerAtMs = (long) call.getDouble("triggerAt", 0.0);
+        if (triggerAtMs <= 0) { call.reject("Missing triggerAt"); return; }
+        try {
+            android.app.AlarmManager am = (android.app.AlarmManager) getContext().getSystemService(android.content.Context.ALARM_SERVICE);
+            Intent intent = new Intent(getContext(), AlarmReceiver.class);
+            PendingIntent pi = PendingIntent.getBroadcast(getContext(), 9999, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setExactAndAllowWhileIdle(android.app.AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+            } else {
+                am.setExact(android.app.AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+            }
+        } catch (Exception e) { }
+        call.resolve();
+    }
+
+    @PluginMethod
+    public void cancelAlarm(PluginCall call) {
+        try {
+            android.app.AlarmManager am = (android.app.AlarmManager) getContext().getSystemService(android.content.Context.ALARM_SERVICE);
+            Intent intent = new Intent(getContext(), AlarmReceiver.class);
+            PendingIntent pi = PendingIntent.getBroadcast(getContext(), 9999, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+            am.cancel(pi);
         } catch (Exception e) { }
         call.resolve();
     }
@@ -239,4 +268,50 @@ if "MatchForegroundService" not in c:
 open(path, 'w').write(c)
 PYEOF
 
-echo "=== Plugin + ForegroundService injection complete ==="
+
+# Copy AlarmReceiver
+cp scripts/AlarmReceiver.java "$PLUGIN_DIR/AlarmReceiver.java" 2>/dev/null || cat > "$PLUGIN_DIR/AlarmReceiver.java" << 'AREOF'
+package com.matchreport.app.ringtones;
+
+import android.content.BroadcastReceiver;
+import android.content.Context;
+import android.content.Intent;
+import android.media.AudioManager;
+import android.media.ToneGenerator;
+import android.os.Handler;
+import android.os.Looper;
+import android.app.PendingIntent;
+import android.os.Vibrator;
+
+public class AlarmReceiver extends BroadcastReceiver {
+    @Override
+    public void onReceive(Context context, Intent intent) {
+        try {
+            ToneGenerator tg = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
+            tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500), 700);
+            new Handler(Looper.getMainLooper()).postDelayed(() -> { tg.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 800); new Handler(Looper.getMainLooper()).postDelayed(tg::release, 1000); }, 1400);
+        } catch (Exception e) { }
+        try { Vibrator v = (Vibrator) context.getSystemService(Context.VIBRATOR_SERVICE); if (v != null) v.vibrate(new long[]{0, 300, 200, 300, 200, 500}, -1); } catch (Exception e) { }
+    }
+}
+AREOF
+echo "AlarmReceiver written"
+
+# Add receiver to manifest
+python3 << 'PYEOF3'
+import os
+path = "android/app/src/main/AndroidManifest.xml"
+c = open(path).read()
+if "AlarmReceiver" not in c:
+    c = c.replace("</application>", '        <receiver android:name="com.matchreport.app.ringtones.AlarmReceiver" android:exported="false" />\n    </application>')
+    open(path, "w").write(c)
+    print("AlarmReceiver declared in manifest")
+if "SCHEDULE_EXACT_ALARM" not in c:
+    c = open(path).read()
+    c = c.replace("<uses-permission android:name=\"android.permission.FOREGROUND_SERVICE\"", '<uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <uses-permission android:name="android.permission.FOREGROUND_SERVICE\"')
+    open(path, "w").write(c)
+    print("SCHEDULE_EXACT_ALARM permission added")
+PYEOF3
+
+echo "=== Plugin + ForegroundService + AlarmReceiver injection complete ==="
