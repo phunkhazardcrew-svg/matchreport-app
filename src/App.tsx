@@ -19,12 +19,17 @@ function playWebTone(freq=3200){playPresetById('goal-fanfare');}
 
 function saveAlarmConfig(toneSec:number, vibSec:number) {
   localStorage.setItem("alarm_config",JSON.stringify({toneSec,vibSec}));
+  try { Ringtones.setAlarmConfig({ toneSec, vibSec }); } catch(_) {}
 }
 
 function scheduleHalftimeAlarm(remainingSeconds: number) {
   try {
+    // First send current alarm config from localStorage
+    const cfg = JSON.parse(localStorage.getItem("alarm_config") || '{"toneSec":5,"vibSec":5}');
+    Ringtones.setAlarmConfig({ toneSec: cfg.toneSec, vibSec: cfg.vibSec });
+    // Then schedule the alarm
     const triggerAt = Date.now() + (remainingSeconds * 1000);
-    Ringtones.scheduleAlarm({ triggerAt, toneDuration: toneSec, vibDuration: vibSec });
+    Ringtones.scheduleAlarm({ triggerAt });
   } catch(_) {}
 }
 function cancelHalftimeAlarm() {
@@ -224,7 +229,14 @@ export default function MatchReport(){
   // Restore on mount
   useEffect(() => {
     restoreGameState();
+    try{const ac=JSON.parse(localStorage.getItem('alarm_config')||'{}');if(ac.toneSec!=null)setToneDur(ac.toneSec);if(ac.vibSec!=null)setVibDur(ac.vibSec);}catch(_){}
   }, []);
+
+
+  // Sync alarm config to native plugin whenever settings change
+  useEffect(() => {
+    saveAlarmConfig(toneDur, vibDur);
+  }, [toneDur, vibDur]);
 
   // Auto-save every 2 seconds when game is active
   useEffect(() => {

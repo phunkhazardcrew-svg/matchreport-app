@@ -291,36 +291,51 @@ public class AlarmPlaybackService extends Service {
                 AudioManager.AUDIOFOCUS_GAIN_TRANSIENT);
         }
 
-        // Play tone on STREAM_ALARM (ignores silent mode)
+        // Play REPEATING tone on STREAM_ALARM (ignores silent mode)
+        // ToneGenerator.startTone() gets cut off by Android after ~1s for some tones
+        // Fix: restart the tone every 700ms via a repeating Handler
         if (toneSec > 0) {
             try {
                 toneGenerator = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
-                // Play repeating tones for the configured duration
-                int toneMs = toneSec * 1000;
-                int interval = 800; // 800ms per beep cycle
-                int repeats = toneMs / interval;
-                for (int i = 0; i < repeats; i++) {
-                    final int delay = i * interval;
-                    handler.postDelayed(() -> {
-                        try { toneGenerator.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 500); }
-                        catch (Exception e) { }
-                    }, delay);
-                }
+                final long toneEndTime = System.currentTimeMillis() + (toneSec * 1000L);
+                Runnable toneRunnable = new Runnable() {
+                    @Override
+                    public void run() {
+                        if (System.currentTimeMillis() < toneEndTime && toneGenerator != null) {
+                            try { toneGenerator.startTone(ToneGenerator.TONE_CDMA_ALERT_CALL_GUARD, 600); }
+                            catch (Exception e) { }
+                            handler.postDelayed(this, 700); // Restart every 700ms
+                        }
+                    }
+                };
+                toneRunnable.run(); // Start immediately
             } catch (Exception e) { }
         }
 
         // Vibrate for configured duration
+        // Use VibrationEffect for Android 8.0+ (old method is deprecated)
         if (vibSec > 0) {
             try {
                 Vibrator v = (Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-                if (v != null) {
-                    int cycles = (vibSec * 1000) / 800;
-                    long[] pattern = new long[cycles * 2 + 1];
-                    pattern[0] = 0;
-                    for (int i = 0; i < cycles * 2; i++) {
-                        pattern[i + 1] = (i % 2 == 0) ? 500 : 300;
+                if (v != null && v.hasVibrator()) {
+                    long vibMs = vibSec * 1000L;
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                        // 500ms on, 300ms off pattern for the full duration
+                        int cycles = (int)(vibMs / 800);
+                        long[] timing = new long[cycles * 2 + 1];
+                        int[] amplitudes = new int[cycles * 2 + 1];
+                        timing[0] = 0; amplitudes[0] = 0;
+                        for (int i = 0; i < cycles; i++) {
+                            timing[i*2+1] = 500; amplitudes[i*2+1] = 255; // ON
+                            timing[i*2+2] = 300; amplitudes[i*2+2] = 0;   // OFF
+                        }
+                        v.vibrate(android.os.VibrationEffect.createWaveform(timing, amplitudes, -1));
+                    } else {
+                        long[] pattern = new long[(int)(vibMs / 400)];
+                        pattern[0] = 0;
+                        for (int i = 1; i < pattern.length; i++) pattern[i] = 400;
+                        v.vibrate(pattern, -1);
                     }
-                    v.vibrate(pattern, -1);
                 }
             } catch (Exception e) { }
         }
