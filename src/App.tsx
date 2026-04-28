@@ -159,6 +159,61 @@ export default function MatchReport(){
     return()=>{handler.then(h=>h.remove());};
   },[]);
 
+
+  // === STATE PERSISTENCE: Survive app kill ===
+  const SAVE_KEY = 'matchreport_game_state';
+
+  function saveGameState() {
+    if (!started) return;
+    const state = {
+      screen, hd, pc, ht, at, hp, ap, half, tl, run, pau, isOt, otS,
+      hS, aS, htH, htA, evts, whistled, started, hOn, aOn, notes,
+      pausedElapsed: pausedElapsedRef.current,
+      runStart: runStartRef.current,
+      savedAt: Date.now()
+    };
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch(_) {}
+  }
+
+  function restoreGameState() {
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (!raw) return false;
+      const s = JSON.parse(raw);
+      if (!s.started) return false;
+      // Only restore if saved less than 6 hours ago
+      if (Date.now() - s.savedAt > 6 * 60 * 60 * 1000) { localStorage.removeItem(SAVE_KEY); return false; }
+      setHd(s.hd); setPc(s.pc); setHt(s.ht); setAt(s.at);
+      setHp(s.hp); setAp(s.ap); setHalf(s.half); setTl(s.tl);
+      setPau(true); // Always restore paused
+      setIsOt(s.isOt); setOtS(s.otS); setHS(s.hS); setAS(s.aS);
+      setHtH(s.htH); setHtA(s.htA); setEvts(s.evts);
+      setWhistled(s.whistled); setStarted(s.started);
+      setHOn(s.hOn); setAOn(s.aOn); setNotes(s.notes);
+      pausedElapsedRef.current = s.pausedElapsed || 0;
+      runStartRef.current = 0; // Will be set on resume
+      setScreen('game');
+      return true;
+    } catch(_) { return false; }
+  }
+
+  function clearGameState() {
+    try { localStorage.removeItem(SAVE_KEY); } catch(_) {}
+  }
+
+  // Restore on mount
+  useEffect(() => { restoreGameState(); }, []);
+
+  // Auto-save every 2 seconds when game is active
+  useEffect(() => {
+    if (!started) return;
+    const iv = setInterval(saveGameState, 2000);
+    // Also save on visibility change (user switches app)
+    const onVis = () => { if (document.visibilityState === 'hidden') saveGameState(); };
+    document.addEventListener('visibilitychange', onVis);
+    return () => { clearInterval(iv); document.removeEventListener('visibilitychange', onVis); };
+  }, [started, screen, hd, pc, ht, at, half, tl, run, pau, isOt, otS, hS, aS, htH, htA, evts, whistled, hOn, aOn, notes]);
+
   async function loadArchive(){const m=await db.matches.orderBy('createdAt').reverse().toArray();setArchivedMatches(m);}
   async function loadSounds(){const s=await db.soundConfigs.toArray();setSoundCfgs(s);}
 
@@ -202,7 +257,7 @@ export default function MatchReport(){
   function applyCSV(t:string){const r=parseCSV(t);if(r){if(r.homeTeam)setHt(r.homeTeam);if(r.awayTeam)setAt(r.awayTeam);if(r.homePlayers.length)setHp(r.homePlayers);if(r.awayPlayers.length)setAp(r.awayPlayers);flash("ok");return true;}flash("err");return false;}
   function onFile(e:any){const f=e.target.files?.[0];if(!f)return;const r=new FileReader();r.onload=ev=>applyCSV(ev.target?.result as string);r.readAsText(f);e.target.value="";}
   function loadDemo(){setHt("FC Teststadt");setAt("SV Musterheim");setHp([...DEMO_H]);setAp([...DEMO_A]);flash("ok");}
-  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);}
+  function startT(){if(tl===null){setTl(hd*60);pausedElapsedRef.current=0;}runStartRef.current=Date.now();setRun(true);setPau(false);setStarted(true);try{Ringtones.startGame();}catch(_){}}
   function confirmHT(){setRun(false);setPau(false);setIsOt(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:1,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot1-${Date.now()}`}]);setHtH(hS);setHtA(aS);setOtS(0);setWhistled(false);setHalf(2);setTl(hd*60);pausedElapsedRef.current=0;runStartRef.current=0;setModal(null);}
   function confirmFT(){setRun(false);setPau(false);if(otS>0)setEvts(p=>[...p,{type:"info",half:2,text:`Nachspielzeit: ${fmt(otS)}`,id:`ot2-${Date.now()}`}]);setModal(null);navTo("review");}
 
@@ -214,9 +269,9 @@ export default function MatchReport(){
   function selSO(p:any){setMD({out:p});setMS(1);}
   function selSI(p:any){const fn=mT==="home"?setHOn:setAOn;fn(x=>x.filter(id=>id!==mD.out.id).concat(p.id));setEvts(x=>[...x,{type:"sub",half,outPlayer:mD.out,inPlayer:p,team:mT,id:`s-${Date.now()}`,displayTime:getDispMin()}]);playEventSound('sub');setModal(null);}
   function delEv(ev:any){setEvts(x=>x.filter(e=>e.id!==ev.id));if(ev.type==="goal"){const own=ev.goalType==="Eigentor";if(own){if(ev.team==="home")setAS(s=>Math.max(0,s-1));else setHS(s=>Math.max(0,s-1));}else{if(ev.team==="home")setHS(s=>Math.max(0,s-1));else setAS(s=>Math.max(0,s-1));}}}
-  function resetAll(){setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);screenHistory.current=["home"];setScreen("home");}
+  function resetAll(){clearGameState();try{Ringtones.stopGame();}catch(_){}setHalf(1);setTl(null);setRun(false);setPau(false);setIsOt(false);setOtS(0);setHS(0);setAS(0);setHtH(null);setHtA(null);setEvts([]);setWhistled(false);setStarted(false);setHOn([]);setAOn([]);setNotes("");setExporting("");setModal(null);screenHistory.current=["home"];setScreen("home");}
 
-  async function saveMatchToArchive(){
+  async function saveMatchToArchive(){clearGameState();try{Ringtones.stopGame();}catch(_){}
     const match:Match={id:crypto.randomUUID(),homeTeam:ht,awayTeam:at,homePlayers:hp,awayPlayers:ap,homeScore:hS,awayScore:aS,htHomeScore:htH,htAwayScore:htA,halfDuration:hd,playerCount:pc,events:evts,notes,status:'finished',createdAt:Date.now(),updatedAt:Date.now()};
     await db.matches.put(match);
     await loadArchive();
@@ -265,7 +320,7 @@ export default function MatchReport(){
           <div style={{marginTop:20}}><Btn full color="#1e293b" onClick={()=>setConfirmAction({title:'App beenden?',text:'Die App wird geschlossen.',onOk:()=>CapApp.exitApp()})}><Square size={16}/> App beenden</Btn></div>
         </div>
 
-        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 2.7 • Offline-fähig</div>
+        <div style={{marginTop:60,color:C.txd,fontSize:11,textAlign:"center"}}>Version 3.1 • Offline-fähig</div>
       </div>
     </div>);
   }

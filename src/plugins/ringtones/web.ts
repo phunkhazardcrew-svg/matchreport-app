@@ -16,6 +16,8 @@ export class RingtonesWeb extends WebPlugin implements RingtonesPlugin {
     } catch (_) {}
   }
   async stop(): Promise<void> {}
+  async startGame(): Promise<void> {}
+  async stopGame(): Promise<void> {}
   async playLoud(): Promise<void> { /* Web fallback: just play loud via AudioContext */ try{const c=new AudioContext();const g=c.createGain();g.connect(c.destination);g.gain.value=1.0;const o=c.createOscillator();o.connect(g);o.frequency.value=3200;o.start();setTimeout(()=>o.stop(),800);}catch(_){} }
   async pick(): Promise<{ uri: string | null; cancelled: boolean }> {
     return { uri: null, cancelled: true };
